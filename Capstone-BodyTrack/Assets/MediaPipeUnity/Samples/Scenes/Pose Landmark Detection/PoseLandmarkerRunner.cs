@@ -170,12 +170,14 @@ namespace Mediapipe.Unity.Sample.PoseLandmarkDetection
         {
             _poseLandmarkerResultAnnotationController.DrawLater(result);
 
-            // CHANGED: UpdatePose 대신 SetLatestLandmarks를 호출하여 데이터만 전달
+            // --- [수정된 부분] ---
+            // 'SetLatestLandmarks'를 'SetLatestPoseLandmarks'로 변경
             if (poseRetargeting != null && result.poseWorldLandmarks != null && result.poseWorldLandmarks.Count > 0)
             {
                 // 첫 번째로 감지된 사람의 3D 랜드마크를 저장하도록 요청
-                poseRetargeting.SetLatestLandmarks(result.poseWorldLandmarks[0].landmarks);
+                poseRetargeting.SetLatestPoseLandmarks(result.poseWorldLandmarks[0].landmarks);
             }
+            // --------------------
 
             DisposeAllMasks(result);
         }
