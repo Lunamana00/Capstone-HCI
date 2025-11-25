@@ -4,51 +4,53 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
 
-public class TailCollisionSender : MonoBehaviour
+public class TailCollision : MonoBehaviour
 {
     [Header("IP Settings")]
     [SerializeField]
-    private string phoneIpAddress = "192.168.1.10"; // 폰의 Wi-Fi IP
+    private string phoneIpAddress = "192.168.1.10"; // Phone Wi-Fi IP
 
     [Header("Port")]
     [SerializeField]
-    private int phonePort = 8081; // 폰 서버 포트 (IMU와 다른 포트 사용)
+    private int phonePort = 8081; // Phone Server Port
 
     private static readonly HttpClient client = new HttpClient();
 
-    // 💡 2. Rigidbody가 다른 Collider와 '충돌'할 때 호출됩니다.
-    // (꼬리 뼈 중 하나에 이 스크립트와 Rigidbody가 있어야 함)
+    // Event for Haptics (bHaptics)
+    public delegate void TailCollisionHandler(float force, Vector3 contactPoint);
+    public event TailCollisionHandler OnTailCollision;
+
     void OnCollisionEnter(Collision collision)
     {
-        // 3. 충돌 세기 계산 (속도에 기반)
+        // Calculate impact force based on relative velocity
         float impactForce = collision.relativeVelocity.magnitude;
 
-        Debug.Log($"꼬리 충돌 감지! 세기: {impactForce}");
-
-        // 4. 일정 세기 이상일 때만 폰으로 전송 (비동기)
-        if (impactForce > 1.0f) // (임계값 1.0은 조절 필요)
+        // 1. Send to Phone (Throttled or Threshold check)
+        if (impactForce > 1.0f)
         {
             SendVibrationRequest(impactForce);
         }
+
+        // 2. Trigger Local Haptics (bHaptics)
+        // Get the first contact point
+        Vector3 contactPoint = collision.contacts.Length > 0 ? collision.contacts[0].point : transform.position;
+        OnTailCollision?.Invoke(impactForce, contactPoint);
     }
 
-    public async void SendVibrationRequest(float force)
+    private async void SendVibrationRequest(float force)
     {
         string url = $"http://{phoneIpAddress}:{phonePort}/vibrate";
-        string json = $"{{\"force\": {force}}}"; // 간단한 JSON 생성
+        string json = $"{{\"force\": {force}}}";
 
         try
         {
             StringContent content = new StringContent(json, Encoding.UTF8, "application/json");
+            // Fire and forget (async)
             HttpResponseMessage response = await client.PostAsync(url, content);
 
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
-                Debug.Log("Vibration command sent to phone.");
-            }
-            else
-            {
-                Debug.LogWarning($"Failed to send. Phone server responded: {response.StatusCode}");
+                Debug.LogWarning($"Failed to send vibration to phone. Status: {response.StatusCode}");
             }
         }
         catch (Exception ex)
@@ -57,7 +59,6 @@ public class TailCollisionSender : MonoBehaviour
         }
     }
 
-    // 💡 (선택) 폰 IP를 설정하는 public 함수
     public void SetPhoneIP(string ip)
     {
         phoneIpAddress = ip;

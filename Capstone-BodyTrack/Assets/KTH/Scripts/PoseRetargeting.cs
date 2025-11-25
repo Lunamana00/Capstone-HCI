@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Landmark = Mediapipe.Tasks.Components.Containers.Landmark;
 using Mediapipe.Tasks.Components.Containers;
@@ -31,9 +32,27 @@ public class PoseRetargeting : MonoBehaviour
     [Header("Hand Retargeting")]
     [SerializeField] private bool retargetHands = true;
 
-    [Header("Arm Control Strategy")]
-    [Tooltip("손 데이터가 있을 때 팔뚝 제어 방식")]
-    [SerializeField] private ArmControlMode armControlMode = ArmControlMode.PoseOnlyDirection;
+    [Header("Calibration & Offsets")]
+    [Tooltip("Automatically force T-Pose (Bind Pose) at start to calibrate.")]
+    [SerializeField] private bool autoCalibrate = true;
+    
+    [Tooltip("Additional rotation for wrists to fix 90-degree twists.")]
+    [SerializeField] private Vector3 wristRotationOffset = new Vector3(90, 0, 0);
+
+    [Tooltip("Additional rotation for arms.")]
+    [SerializeField] private Vector3 armRotationOffset = Vector3.zero;
+
+    [Header("Natural Walking (3D Movement)")]
+    [Tooltip("X: Horizontal Sensitivity, Y: Vertical Scale Multiplier, Z: Unused (Calculated via Depth)")]
+    [SerializeField] private Vector3 movementScale = new Vector3(1.5f, 1.0f, 1.0f);
+    
+    [Tooltip("Estimated distance from camera in meters. Used for Z-axis calculation.")]
+    [SerializeField] private float estimatedCameraDistance = 2.5f;
+    
+    [SerializeField] private float hipHeightOffset = 0.0f;
+
+    [Tooltip("Forces legs to be straighter to compensate for high camera angles.")]
+    [SerializeField, Range(0f, 1f)] private float legStraighteningFactor = 0.5f;
 
     [Header("Coordinate System")]
     [SerializeField] private bool mirrorMode = true;
@@ -41,13 +60,6 @@ public class PoseRetargeting : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool debugLog = false;
     [SerializeField] private bool showHandStatus = false;
-
-    public enum ArmControlMode
-    {
-        PoseOnlyDirection,      // 팔뚝 방향만 포즈 데이터 (추천)
-        HandTwistOnly,          // 팔뚝 방향+비틀림 모두 포즈, 손목만 손 데이터
-        FullHandControl         // 팔뚝도 손 데이터로 제어 (불안정)
-    }
 
     // Bones
     private Transform Hips, Spine, Chest, UpperChest, Neck, Head;
@@ -61,7 +73,14 @@ public class PoseRetargeting : MonoBehaviour
 
     // Bind pose caches
     private readonly Dictionary<Transform, Quaternion> bindLocalRot = new();
-    private readonly Dictionary<Transform, Vector3> bindLocalDir = new();
+    private readonly Dictionary<Transform, Vector3> bindLocalDir = new(); // Direction to child in local space
+    
+    // Calibration Data
+    private float initialHipHeightUnity;
+    private float initialHipToFootDistMP = -1f;
+    private float initialShoulderWidthMP = -1f;
+    private Vector3 initialHipCenterMP;
+    private float verticalScale = 1.0f;
 
     // Landmark Caches
     private IReadOnlyList<Landmark> latestPoseLandmarks;
@@ -71,7 +90,7 @@ public class PoseRetargeting : MonoBehaviour
 
     private readonly Vector3[] lmPoseCache = new Vector3[33];
 
-    // 손 데이터 상태 추적
+    // Hand State
     private bool leftHandActive = false;
     private bool rightHandActive = false;
     private Vector3[] leftHandCache = new Vector3[21];
@@ -86,19 +105,37 @@ public class PoseRetargeting : MonoBehaviour
 
         if (characterAnimator == null || !characterAnimator.isHuman)
         {
-            Debug.LogError("? Humanoid Animator가 필요합니다!");
+            Debug.LogError("Humanoid Animator is required!");
             enabled = false;
             return;
         }
 
         InitializeBones();
         InitializeHandBones();
-        CacheBindPose();
 
-        Debug.Log($"? Pose Retargeting 초기화 완료\n" +
-                  $"   Avatar: {characterAnimator.avatar.name}\n" +
-                  $"   Arm Control: {armControlMode}\n" +
-                  $"   Mirror Mode: {mirrorMode}");
+        if (autoCalibrate)
+        {
+            StartCoroutine(AutoCalibrateRoutine());
+        }
+        else
+        {
+            CacheBindPose();
+            if (Hips != null) initialHipHeightUnity = Hips.position.y;
+        }
+    }
+
+    private IEnumerator AutoCalibrateRoutine()
+    {
+        // Force Bind Pose (T-Pose)
+        characterAnimator.Rebind();
+        yield return new WaitForEndOfFrame();
+
+        CacheBindPose();
+        if (Hips != null) initialHipHeightUnity = Hips.position.y;
+        
+        Debug.Log("Auto-Calibration Complete: Bind Pose Cached.");
+        
+        // Animator will naturally resume animation next frame
     }
 
     void Update()
@@ -123,7 +160,7 @@ public class PoseRetargeting : MonoBehaviour
             }
         }
 
-        // --- [핵심 1] 손 데이터를 먼저 처리하여 캐시 업데이트 ---
+        // 1. Process Hand Data
         if (handsToProcess != null && handednessToProcess != null && retargetHands)
         {
             ProcessHandData(handsToProcess, handednessToProcess);
@@ -134,13 +171,13 @@ public class PoseRetargeting : MonoBehaviour
             rightHandActive = false;
         }
 
-        // --- [핵심 2] 포즈 데이터 처리 (손 상태를 알고 있음) ---
+        // 2. Process Body Pose
         if (poseToProcess != null)
         {
             UpdateBody(poseToProcess);
         }
 
-        // --- [핵심 3] 손목과 손가락 회전 (팔뚝 회전 이후) ---
+        // 3. Process Fingers
         if (leftHandActive || rightHandActive)
         {
             UpdateHandRotations();
@@ -166,7 +203,7 @@ public class PoseRetargeting : MonoBehaviour
         }
     }
 
-    // --- [핵심 함수 1] 손 데이터 전처리 ---
+    // --- Data Processing ---
     private void ProcessHandData(IReadOnlyList<Landmarks> hands, IReadOnlyList<Classifications> handedness)
     {
         leftHandActive = false;
@@ -190,18 +227,14 @@ public class PoseRetargeting : MonoBehaviour
 
             Vector3[] targetCache = (actualLabel == "Left") ? leftHandCache : rightHandCache;
 
-            // 손 랜드마크 변환 및 캐싱
             for (int j = 0; j < handLMList.Count; j++)
             {
                 var lm = handLMList[j];
+                // Convert MediaPipe coords to Unity
                 if (mirrorMode)
-                {
                     targetCache[j] = new Vector3(lm.x, -lm.y, -lm.z);
-                }
                 else
-                {
                     targetCache[j] = new Vector3(-lm.x, -lm.y, -lm.z);
-                }
             }
 
             if (actualLabel == "Left") leftHandActive = true;
@@ -209,26 +242,22 @@ public class PoseRetargeting : MonoBehaviour
         }
     }
 
-    // --- [핵심 함수 2] 몸체 업데이트 (팔뚝 포함) ---
+    // --- Body Retargeting ---
     private void UpdateBody(IReadOnlyList<Landmark> worldLandmarks)
     {
         if (worldLandmarks == null || worldLandmarks.Count < 33) return;
 
-        // 좌표 변환
+        // Convert Landmarks
         for (int i = 0; i < worldLandmarks.Count; i++)
         {
             var lm = worldLandmarks[i];
             if (mirrorMode)
-            {
                 lmPoseCache[i] = new Vector3(lm.x, -lm.y, -lm.z);
-            }
             else
-            {
                 lmPoseCache[i] = new Vector3(-lm.x, -lm.y, -lm.z);
-            }
         }
 
-        // 인덱스 매핑
+        // Indices
         int leftShoulder = mirrorMode ? 12 : 11;
         int rightShoulder = mirrorMode ? 11 : 12;
         int leftElbow = mirrorMode ? 14 : 13;
@@ -245,31 +274,86 @@ public class PoseRetargeting : MonoBehaviour
         Vector3 hipCenter = (lmPoseCache[leftHip] + lmPoseCache[rightHip]) * 0.5f;
         Vector3 shoulderCenter = (lmPoseCache[leftShoulder] + lmPoseCache[rightShoulder]) * 0.5f;
 
-        // 상체 방향
+        // --- Natural Walking & Grounding ---
+        if (Hips != null)
+        {
+            // 1. Calculate Shoulder Width (for Depth Estimation)
+            float currentShoulderWidth = Vector3.Distance(lmPoseCache[leftShoulder], lmPoseCache[rightShoulder]);
+            
+            // 2. Lowest Foot (for Grounding)
+            float leftFootY = lmPoseCache[leftAnkle].y;
+            float rightFootY = lmPoseCache[rightAnkle].y;
+            float minFootY = Mathf.Min(leftFootY, rightFootY);
+            float currentHipToFootDistMP = hipCenter.y - minFootY;
+
+            // 3. Auto-Calibrate on first valid frame
+            if (initialShoulderWidthMP < 0 && currentShoulderWidth > 0.001f && currentHipToFootDistMP > 0.001f)
+            {
+                initialShoulderWidthMP = currentShoulderWidth;
+                initialHipToFootDistMP = currentHipToFootDistMP;
+                initialHipCenterMP = hipCenter;
+                
+                // Calculate vertical scale
+                verticalScale = initialHipHeightUnity / initialHipToFootDistMP;
+                
+                Debug.Log($"Auto-Calibrated: Scale={verticalScale}, ShoulderWidth={initialShoulderWidthMP}");
+            }
+
+            if (initialShoulderWidthMP > 0)
+            {
+                // --- Depth Calculation (Z) ---
+                // Ratio > 1 means closer (bigger), Ratio < 1 means further (smaller)
+                float depthScale = currentShoulderWidth / initialShoulderWidthMP;
+                
+                // Perspective Z Mapping: Z = Dist * (1/Scale - 1)
+                // If Scale=2 (Closer), Z = 2.5 * (0.5 - 1) = -1.25 (Moves forward)
+                float zPos = estimatedCameraDistance * (1.0f / depthScale - 1.0f);
+
+                // --- Horizontal Calculation (X) ---
+                float xPos = (hipCenter.x - initialHipCenterMP.x) * movementScale.x;
+
+                // --- Vertical Calculation (Y) with Normalization ---
+                // Normalize height by depth scale to remove "walking closer = taller" effect
+                float normalizedHipHeight = currentHipToFootDistMP / depthScale;
+                float targetY = normalizedHipHeight * verticalScale * movementScale.y + hipHeightOffset;
+
+                // Apply Position
+                Vector3 targetPos = new Vector3(xPos, targetY, zPos);
+                Hips.position = Vector3.Lerp(Hips.position, targetPos, bodySmoothFactor);
+            }
+        }
+
+        // Body Orientation
         Vector3 torsoUp = (shoulderCenter - hipCenter).normalized;
         Vector3 shoulderRight = (lmPoseCache[rightShoulder] - lmPoseCache[leftShoulder]).normalized;
         Vector3 torsoForward = Vector3.Cross(shoulderRight, torsoUp).normalized;
 
-        // Spine/Chest 회전
+        // Rotate Hips (Root)
+        // We rotate Hips to match the torso orientation. 
+        // This ensures the whole body turns, not just the spine.
+        if (Hips != null)
+        {
+             RotateBoneLookRotation(Hips, torsoForward, torsoUp, bodySmoothFactor);
+        }
+
+        // Spine Rotation
         RotateBoneLookRotation(Spine, torsoForward, torsoUp, bodySmoothFactor);
         RotateBoneLookRotation(Chest, torsoForward, torsoUp, bodySmoothFactor);
         RotateBoneLookRotation(UpperChest, torsoForward, torsoUp, bodySmoothFactor);
 
-        // 상박 (UpperArm) - 항상 포즈 데이터
-        RotateBoneToDirection(RightUpperArm, lmPoseCache[rightElbow] - lmPoseCache[rightShoulder], bodySmoothFactor);
-        RotateBoneToDirection(LeftUpperArm, lmPoseCache[leftElbow] - lmPoseCache[leftShoulder], bodySmoothFactor);
+        // Arms (Twist Corrected)
+        UpdateLimb(RightUpperArm, RightLowerArm, lmPoseCache[rightShoulder], lmPoseCache[rightElbow], lmPoseCache[rightWrist], -shoulderRight, armRotationOffset);
+        UpdateLimb(LeftUpperArm, LeftLowerArm, lmPoseCache[leftShoulder], lmPoseCache[leftElbow], lmPoseCache[leftWrist], shoulderRight, armRotationOffset);
 
-        // --- [핵심] 팔뚝 (LowerArm) 제어 ---
-        UpdateLowerArm(RightLowerArm, rightHandActive, lmPoseCache[rightElbow], lmPoseCache[rightWrist], rightHandCache, "Right");
-        UpdateLowerArm(LeftLowerArm, leftHandActive, lmPoseCache[leftElbow], lmPoseCache[leftWrist], leftHandCache, "Left");
+        // Legs (with Straightening)
+        // We blend the MP direction with a "Straight Down" vector relative to the Hips
+        Vector3 hipDown = -torsoUp; // Approximate down relative to body
 
-        // 다리
-        RotateBoneToDirection(RightUpperLeg, lmPoseCache[rightKnee] - lmPoseCache[rightHip], bodySmoothFactor);
-        RotateBoneToDirection(RightLowerLeg, lmPoseCache[rightAnkle] - lmPoseCache[rightKnee], bodySmoothFactor);
-        RotateBoneToDirection(LeftUpperLeg, lmPoseCache[leftKnee] - lmPoseCache[leftHip], bodySmoothFactor);
-        RotateBoneToDirection(LeftLowerLeg, lmPoseCache[leftAnkle] - lmPoseCache[leftKnee], bodySmoothFactor);
-
-        // 머리
+        UpdateLeg(RightUpperLeg, lmPoseCache[rightKnee] - lmPoseCache[rightHip], hipDown);
+        UpdateLeg(RightLowerLeg, lmPoseCache[rightAnkle] - lmPoseCache[rightKnee], hipDown);
+        UpdateLeg(LeftUpperLeg, lmPoseCache[leftKnee] - lmPoseCache[leftHip], hipDown);
+        UpdateLeg(LeftLowerLeg, lmPoseCache[leftAnkle] - lmPoseCache[leftKnee], hipDown);
+        // Head
         if (Head != null)
         {
             Vector3 nosePos = lmPoseCache[0];
@@ -281,72 +365,37 @@ public class PoseRetargeting : MonoBehaviour
         }
     }
 
-    // --- [핵심 함수 3] 팔뚝 회전 (모드별 분기) ---
-    private void UpdateLowerArm(Transform lowerArm, bool handActive, Vector3 elbowPos, Vector3 wristPos, Vector3[] handCache, string side)
+    private void UpdateLeg(Transform bone, Vector3 mpDir, Vector3 straightDir)
     {
-        if (lowerArm == null) return;
-
-        Vector3 armDir = (wristPos - elbowPos).normalized;
-        if (armDir.sqrMagnitude < 1e-6f) return;
-
-        switch (armControlMode)
-        {
-            case ArmControlMode.PoseOnlyDirection:
-                // 방향만 포즈, 비틀림은 자연스럽게 (가장 안정적)
-                RotateBoneToDirection(lowerArm, armDir, bodySmoothFactor);
-                break;
-
-            case ArmControlMode.HandTwistOnly:
-                // 방향은 포즈, 비틀림은 손 데이터
-                if (handActive)
-                {
-                    Vector3 palmUp = CalculateStablePalmUp(handCache, side);
-                    RotateBoneLookRotation(lowerArm, armDir, palmUp, bodySmoothFactor);
-                }
-                else
-                {
-                    RotateBoneToDirection(lowerArm, armDir, bodySmoothFactor);
-                }
-                break;
-
-            case ArmControlMode.FullHandControl:
-                // 손 데이터로 전체 제어 (덜 안정적)
-                if (handActive)
-                {
-                    Vector3 palmUp = CalculateStablePalmUp(handCache, side);
-                    RotateBoneLookRotation(lowerArm, armDir, palmUp, handSmoothFactor);
-                }
-                else
-                {
-                    RotateBoneToDirection(lowerArm, armDir, bodySmoothFactor);
-                }
-                break;
-        }
+        if (bone == null) return;
+        
+        // Blend between MediaPipe direction and Straight Down
+        Vector3 finalDir = Vector3.Lerp(mpDir.normalized, straightDir.normalized, legStraighteningFactor);
+        
+        RotateBoneToDirection(bone, finalDir, bodySmoothFactor);
     }
 
-    // --- [핵심 함수 4] 안정적인 손바닥 Up 벡터 계산 ---
-    private Vector3 CalculateStablePalmUp(Vector3[] handLM, string side)
+    // --- Limb Update (Twist Corrected) ---
+    private void UpdateLimb(Transform upper, Transform lower, Vector3 root, Vector3 mid, Vector3 tip, Vector3 referenceRight, Vector3 offset)
     {
-        // 손바닥의 불변 삼각형 사용: 손목(0) - 검지중수골(5) - 새끼중수골(17)
-        Vector3 wrist = handLM[0];
-        Vector3 indexMCP = handLM[5];
-        Vector3 pinkyMCP = handLM[17];
+        if (upper == null || lower == null) return;
 
-        // 손바닥 평면의 법선 벡터
-        Vector3 palmRight = (indexMCP - pinkyMCP).normalized;
-        Vector3 palmForward = ((indexMCP + pinkyMCP) * 0.5f - wrist).normalized;
-        Vector3 palmUp = Vector3.Cross(palmForward, palmRight).normalized;
+        // 1. Upper Arm
+        Vector3 upperDir = (mid - root).normalized;
+        // Calculate Plane Normal (Root-Mid-Tip) to determine twist
+        Vector3 armPlaneNormal = Vector3.Cross(upperDir, (tip - mid).normalized).normalized;
+        // If arm is straight, use reference right/forward
+        if (armPlaneNormal.sqrMagnitude < 0.01f) armPlaneNormal = Vector3.Cross(upperDir, Vector3.up);
 
-        // 왼손은 법선 방향 반전
-        if (side == "Left")
-        {
-            palmUp = -palmUp;
-        }
+        // Apply Rotation
+        RotateBoneToDirection(upper, upperDir, bodySmoothFactor, offset);
 
-        return palmUp;
+        // 2. Lower Arm
+        Vector3 lowerDir = (tip - mid).normalized;
+        RotateBoneToDirection(lower, lowerDir, bodySmoothFactor, offset);
     }
 
-    // --- [핵심 함수 5] 손목과 손가락 업데이트 ---
+    // --- Hand Update ---
     private void UpdateHandRotations()
     {
         if (leftHandActive && LeftHandBones?.Wrist != null)
@@ -362,32 +411,26 @@ public class PoseRetargeting : MonoBehaviour
 
     private void UpdateWristAndFingers(HandBones handBones, Vector3[] handLM, string side)
     {
-        // --- 손목 회전 (안정적인 삼각형 기준) ---
+        // Wrist Rotation
         Vector3 wrist = handLM[0];
-        Vector3 middleMCP = handLM[9];  // 중지 중수골 (손목 바로 위)
-        Vector3 middleTip = handLM[12]; // 중지 끝
+        Vector3 middleMCP = handLM[9];
+        Vector3 middleTip = handLM[12];
+        Vector3 indexMCP = handLM[5];
+        Vector3 pinkyMCP = handLM[17];
 
         Vector3 handForward = (middleTip - wrist).normalized;
+        Vector3 handRight = (indexMCP - pinkyMCP).normalized;
+        Vector3 handUp = Vector3.Cross(handRight, handForward).normalized;
 
+        if (side == "Left") handUp = -handUp;
+
+        // Apply Wrist Rotation with Offset
         if (handForward.sqrMagnitude > 1e-6f)
         {
-            // 손바닥의 right 벡터 (검지 → 새끼)
-            Vector3 indexMCP = handLM[5];
-            Vector3 pinkyMCP = handLM[17];
-            Vector3 handRight = (indexMCP - pinkyMCP).normalized;
-
-            // 손의 up 벡터
-            Vector3 handUp = Vector3.Cross(handRight, handForward).normalized;
-
-            if (side == "Left")
-            {
-                handUp = -handUp;
-            }
-
-            RotateBoneLookRotation(handBones.Wrist, handForward, handUp, handSmoothFactor);
+            RotateBoneLookRotation(handBones.Wrist, handForward, handUp, handSmoothFactor, wristRotationOffset);
         }
 
-        // --- 손가락 ---
+        // Fingers
         RotateFinger(handBones.Thumb, handLM, 1, 2, 3, 4);
         RotateFinger(handBones.Index, handLM, 5, 6, 7, 8);
         RotateFinger(handBones.Middle, handLM, 9, 10, 11, 12);
@@ -398,23 +441,13 @@ public class PoseRetargeting : MonoBehaviour
     private void RotateFinger(FingerTransforms finger, Vector3[] lm, int i0, int i1, int i2, int i3)
     {
         if (finger == null) return;
-
-        if (finger.Proximal != null && (lm[i1] - lm[i0]).sqrMagnitude > 1e-6f)
-        {
-            RotateBoneToDirection(finger.Proximal, lm[i1] - lm[i0], handSmoothFactor);
-        }
-        if (finger.Intermediate != null && (lm[i2] - lm[i1]).sqrMagnitude > 1e-6f)
-        {
-            RotateBoneToDirection(finger.Intermediate, lm[i2] - lm[i1], handSmoothFactor);
-        }
-        if (finger.Distal != null && (lm[i3] - lm[i2]).sqrMagnitude > 1e-6f)
-        {
-            RotateBoneToDirection(finger.Distal, lm[i3] - lm[i2], handSmoothFactor);
-        }
+        if (finger.Proximal != null) RotateBoneToDirection(finger.Proximal, lm[i1] - lm[i0], handSmoothFactor);
+        if (finger.Intermediate != null) RotateBoneToDirection(finger.Intermediate, lm[i2] - lm[i1], handSmoothFactor);
+        if (finger.Distal != null) RotateBoneToDirection(finger.Distal, lm[i3] - lm[i2], handSmoothFactor);
     }
 
-    // --- 회전 유틸리티 함수 ---
-    private void RotateBoneToDirection(Transform bone, Vector3 targetDirWorld, float smooth)
+    // --- Core Rotation Logic ---
+    private void RotateBoneToDirection(Transform bone, Vector3 targetDirWorld, float smooth, Vector3 additionalOffset = default)
     {
         if (bone == null || bone.parent == null) return;
         if (targetDirWorld.sqrMagnitude < 1e-6f) return;
@@ -422,33 +455,35 @@ public class PoseRetargeting : MonoBehaviour
         targetDirWorld = targetDirWorld.normalized;
         Vector3 targetDirLocal = bone.parent.InverseTransformDirection(targetDirWorld);
 
-        if (!bindLocalDir.TryGetValue(bone, out Vector3 bindDir))
-        {
-            return;
-        }
+        if (!bindLocalDir.TryGetValue(bone, out Vector3 bindDir)) return;
 
         Quaternion deltaRotation = Quaternion.FromToRotation(bindDir, targetDirLocal);
+        
+        if (!bindLocalRot.TryGetValue(bone, out Quaternion bindRotation)) bindRotation = Quaternion.identity;
 
-        if (!bindLocalRot.TryGetValue(bone, out Quaternion bindRotation))
-        {
-            bindRotation = Quaternion.identity;
-        }
+        // Apply Offset
+        Quaternion offsetRot = Quaternion.Euler(additionalOffset);
+        Quaternion targetLocalRotation = deltaRotation * bindRotation * offsetRot;
 
-        Quaternion targetLocalRotation = deltaRotation * bindRotation;
         bone.localRotation = Quaternion.Slerp(bone.localRotation, targetLocalRotation, smooth);
     }
 
-    private void RotateBoneLookRotation(Transform bone, Vector3 forward, Vector3 up, float smooth)
+    private void RotateBoneLookRotation(Transform bone, Vector3 forward, Vector3 up, float smooth, Vector3 additionalOffset = default)
     {
         if (bone == null || bone.parent == null) return;
         if (forward.sqrMagnitude < 1e-6f || up.sqrMagnitude < 1e-6f) return;
 
         Quaternion worldRot = Quaternion.LookRotation(forward, up);
         Quaternion localRot = Quaternion.Inverse(bone.parent.rotation) * worldRot;
+        
+        // Apply Offset
+        Quaternion offsetRot = Quaternion.Euler(additionalOffset);
+        localRot *= offsetRot;
+
         bone.localRotation = Quaternion.Slerp(bone.localRotation, localRot, smooth);
     }
 
-    // --- Bind Pose 캐싱 ---
+    // --- Bind Pose Cache ---
     private void CacheBindPose()
     {
         CacheBone(Hips);
@@ -491,6 +526,7 @@ public class PoseRetargeting : MonoBehaviour
         }
         else
         {
+            // Fallback for leaf bones
             bindLocalDir[bone] = bone.parent.InverseTransformDirection(bone.forward);
         }
     }
@@ -498,7 +534,6 @@ public class PoseRetargeting : MonoBehaviour
     private void CacheHandBindPose(HandBones hand)
     {
         if (hand == null) return;
-
         CacheBone(hand.Wrist);
         CacheFingerBindPose(hand.Thumb);
         CacheFingerBindPose(hand.Index);
@@ -515,7 +550,7 @@ public class PoseRetargeting : MonoBehaviour
         CacheBone(finger.Distal);
     }
 
-    // --- 초기화 ---
+    // --- Initialization ---
     private void InitializeBones()
     {
         Hips = characterAnimator.GetBoneTransform(HumanBodyBones.Hips);
@@ -547,61 +582,21 @@ public class PoseRetargeting : MonoBehaviour
         LeftHandBones = new HandBones
         {
             Wrist = LeftHand,
-            Thumb = CreateFingerTransforms(
-                HumanBodyBones.LeftThumbProximal,
-                HumanBodyBones.LeftThumbIntermediate,
-                HumanBodyBones.LeftThumbDistal
-            ),
-            Index = CreateFingerTransforms(
-                HumanBodyBones.LeftIndexProximal,
-                HumanBodyBones.LeftIndexIntermediate,
-                HumanBodyBones.LeftIndexDistal
-            ),
-            Middle = CreateFingerTransforms(
-                HumanBodyBones.LeftMiddleProximal,
-                HumanBodyBones.LeftMiddleIntermediate,
-                HumanBodyBones.LeftMiddleDistal
-            ),
-            Ring = CreateFingerTransforms(
-                HumanBodyBones.LeftRingProximal,
-                HumanBodyBones.LeftRingIntermediate,
-                HumanBodyBones.LeftRingDistal
-            ),
-            Pinky = CreateFingerTransforms(
-                HumanBodyBones.LeftLittleProximal,
-                HumanBodyBones.LeftLittleIntermediate,
-                HumanBodyBones.LeftLittleDistal
-            )
+            Thumb = CreateFingerTransforms(HumanBodyBones.LeftThumbProximal, HumanBodyBones.LeftThumbIntermediate, HumanBodyBones.LeftThumbDistal),
+            Index = CreateFingerTransforms(HumanBodyBones.LeftIndexProximal, HumanBodyBones.LeftIndexIntermediate, HumanBodyBones.LeftIndexDistal),
+            Middle = CreateFingerTransforms(HumanBodyBones.LeftMiddleProximal, HumanBodyBones.LeftMiddleIntermediate, HumanBodyBones.LeftMiddleDistal),
+            Ring = CreateFingerTransforms(HumanBodyBones.LeftRingProximal, HumanBodyBones.LeftRingIntermediate, HumanBodyBones.LeftRingDistal),
+            Pinky = CreateFingerTransforms(HumanBodyBones.LeftLittleProximal, HumanBodyBones.LeftLittleIntermediate, HumanBodyBones.LeftLittleDistal)
         };
 
         RightHandBones = new HandBones
         {
             Wrist = RightHand,
-            Thumb = CreateFingerTransforms(
-                HumanBodyBones.RightThumbProximal,
-                HumanBodyBones.RightThumbIntermediate,
-                HumanBodyBones.RightThumbDistal
-            ),
-            Index = CreateFingerTransforms(
-                HumanBodyBones.RightIndexProximal,
-                HumanBodyBones.RightIndexIntermediate,
-                HumanBodyBones.RightIndexDistal
-            ),
-            Middle = CreateFingerTransforms(
-                HumanBodyBones.RightMiddleProximal,
-                HumanBodyBones.RightMiddleIntermediate,
-                HumanBodyBones.RightMiddleDistal
-            ),
-            Ring = CreateFingerTransforms(
-                HumanBodyBones.RightRingProximal,
-                HumanBodyBones.RightRingIntermediate,
-                HumanBodyBones.RightRingDistal
-            ),
-            Pinky = CreateFingerTransforms(
-                HumanBodyBones.RightLittleProximal,
-                HumanBodyBones.RightLittleIntermediate,
-                HumanBodyBones.RightLittleDistal
-            )
+            Thumb = CreateFingerTransforms(HumanBodyBones.RightThumbProximal, HumanBodyBones.RightThumbIntermediate, HumanBodyBones.RightThumbDistal),
+            Index = CreateFingerTransforms(HumanBodyBones.RightIndexProximal, HumanBodyBones.RightIndexIntermediate, HumanBodyBones.RightIndexDistal),
+            Middle = CreateFingerTransforms(HumanBodyBones.RightMiddleProximal, HumanBodyBones.RightMiddleIntermediate, HumanBodyBones.RightMiddleDistal),
+            Ring = CreateFingerTransforms(HumanBodyBones.RightRingProximal, HumanBodyBones.RightRingIntermediate, HumanBodyBones.RightRingDistal),
+            Pinky = CreateFingerTransforms(HumanBodyBones.RightLittleProximal, HumanBodyBones.RightLittleIntermediate, HumanBodyBones.RightLittleDistal)
         };
     }
 
