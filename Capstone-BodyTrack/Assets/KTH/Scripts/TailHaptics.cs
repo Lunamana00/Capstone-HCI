@@ -7,61 +7,61 @@ public class TailHaptics : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private TailControllerPhysics tailPhysics;
-    [SerializeField] private TailCollision tailCollision;
     [SerializeField] private Transform tailRoot;
 
-    [Header("Idle Feedback (Weight)")]
-    [SerializeField] private bool enableIdleFeedback = true;
-    [SerializeField] private float idleIntensity = 0.1f; // 10%
-    [SerializeField] private float breathingInterval = 4.0f; // 4 seconds per breath
-    [SerializeField] private float breathingIntensity = 0.15f; // Slightly stronger during breath
-
-    [Header("Inertia Feedback (Sway)")]
-    [SerializeField] private bool enableSwayFeedback = true;
-    [SerializeField] private float swayVelocityThreshold = 5.0f;
-    [SerializeField] private float swayIntensityMultiplier = 0.5f;
+    [Header("Sway Feedback (Inertia)")]
+    public bool enableSwayFeedback = true;
+    public float swayVelocityThreshold = 10f; // Minimum angular velocity
+    public float swayIntensityMultiplier = 0.5f;
 
     [Header("Collision Feedback")]
-    [SerializeField] private bool enableCollisionFeedback = true;
-    [SerializeField] private float collisionIntensityMultiplier = 1.0f;
-    [SerializeField] private float maxImpactDistance = 1.0f; // Distance from root to consider "Tip"
+    public bool enableCollisionFeedback = true;
+    public float collisionIntensityMultiplier = 0.5f;
+    public float maxImpactDistance = 1.0f; // Distance from root to be considered "base"
 
-    [Header("Tension Feedback (Grab)")]
-    [SerializeField] private bool enableTensionFeedback = true;
-    [Range(0, 1)] [SerializeField] private float currentTension = 0f;
+    [Header("Tension Feedback (Grabbing)")]
+    public bool enableTensionFeedback = true;
+    [Range(0f, 1f)] public float currentTension = 0f; // Updated by external script
 
     private float lastSwayTime;
-    private const float SWAY_HAPTIC_INTERVAL = 0.1f;
-    private float breathingTimer;
 
     void Start()
     {
         if (tailPhysics == null) tailPhysics = GetComponent<TailControllerPhysics>();
-        if (tailCollision == null) tailCollision = GetComponent<TailCollision>();
         if (tailRoot == null && tailPhysics != null) tailRoot = tailPhysics.tailRoot;
 
-        if (tailCollision != null)
+        // Find all TailCollision components in tail bones and subscribe to their events
+        TailCollision[] tailCollisions = GetComponentsInChildren<TailCollision>();
+        if (tailCollisions.Length > 0)
         {
-            tailCollision.OnTailCollision += TriggerCollisionFeedback;
+            foreach (TailCollision collision in tailCollisions)
+            {
+                collision.OnTailCollision += TriggerCollisionFeedback;
+            }
+            Debug.Log($"TailHaptics: Subscribed to {tailCollisions.Length} TailCollision components");
+        }
+        else
+        {
+            Debug.LogWarning("TailHaptics: No TailCollision components found in children. Collision feedback will not work.");
         }
     }
 
     void OnDestroy()
     {
-        if (tailCollision != null)
+        // Unsubscribe from all TailCollision components
+        TailCollision[] tailCollisions = GetComponentsInChildren<TailCollision>();
+        foreach (TailCollision collision in tailCollisions)
         {
-            tailCollision.OnTailCollision -= TriggerCollisionFeedback;
+            if (collision != null)
+            {
+                collision.OnTailCollision -= TriggerCollisionFeedback;
+            }
         }
     }
 
     void Update()
     {
-        if (enableIdleFeedback)
-        {
-            UpdateIdleFeedback();
-        }
-
-        if (enableSwayFeedback && Time.time - lastSwayTime > SWAY_HAPTIC_INTERVAL)
+        if (enableSwayFeedback && Time.time - lastSwayTime > 0.1f) // Throttle sway updates
         {
             UpdateSwayFeedback();
             lastSwayTime = Time.time;
@@ -73,33 +73,7 @@ public class TailHaptics : MonoBehaviour
         }
     }
 
-    // 1. Idle & Weight (Continuous, Lumbar)
-    private void UpdateIdleFeedback()
-    {
-        breathingTimer += Time.deltaTime;
-        float currentIntensity = idleIntensity;
-
-        // Simple Breathing Effect (Sine Wave)
-        float breath = (Mathf.Sin(breathingTimer * (2f * Mathf.PI / breathingInterval)) + 1f) * 0.5f; // 0 to 1
-        currentIntensity += breath * (breathingIntensity - idleIntensity);
-
-        int intensity = (int)(currentIntensity * 100);
-
-        // PlayPath on Bottom Row (Lumbar)
-        // Vest Y: 0.0 is bottom, 1.0 is top.
-        // We want bottom 1-2 rows. Y = 0.1 - 0.2.
-        // X: 0.0 to 1.0 (Full width)
-        
-        // We use 4 points to define a line across the bottom
-        float[] xValues = { 0.2f, 0.8f };
-        float[] yValues = { 0.1f, 0.1f };
-        int[] intensities = { intensity, intensity };
-
-        // Duration small to allow continuous update
-        BhapticsLibrary.PlayPath((int)PositionType.Vest, xValues, yValues, intensities, 100);
-    }
-
-    // 2. Inertia & Sway (Path Mode, Centrifugal)
+    // 2. Inertia & Sway (Motor Mode, Centrifugal)
     private void UpdateSwayFeedback()
     {
         if (tailPhysics == null) return;
@@ -115,30 +89,27 @@ public class TailHaptics : MonoBehaviour
             // Turning Left (Vel < 0) -> Force pushes to Right.
             // Turning Right (Vel > 0) -> Force pushes to Left.
             
-            // We want a path that moves from Center to Side.
-            // Center X = 0.5.
-            // Right X = 0.8, Left X = 0.2.
-
-            float[] xValues = new float[2];
-            float[] yValues = new float[2];
-            int[] intensities = new int[2];
-
-            float yPos = 0.3f; // Slightly above lumbar
+            // Use Mid-Back Side Columns (Rows 2, 3, 4) to avoid overlapping with Idle (Row 5)
+            int[] motors = new int[40];
 
             if (angularVelY > 0) // Turning Right -> Force to Left
             {
-                // Path: Center -> Left
-                xValues[0] = 0.5f; yValues[0] = yPos; intensities[0] = intensity / 2;
-                xValues[1] = 0.2f; yValues[1] = yPos; intensities[1] = intensity;
+                // Activate Left Side Column (Upper/Mid Back)
+                // Row 2 Left: 24, Row 3 Left: 28, Row 4 Left: 32
+                motors[24] = intensity;
+                motors[28] = intensity;
+                motors[32] = intensity;
             }
             else // Turning Left -> Force to Right
             {
-                // Path: Center -> Right
-                xValues[0] = 0.5f; yValues[0] = yPos; intensities[0] = intensity / 2;
-                xValues[1] = 0.8f; yValues[1] = yPos; intensities[1] = intensity;
+                // Activate Right Side Column (Upper/Mid Back)
+                // Row 2 Right: 27, Row 3 Right: 31, Row 4 Right: 35
+                motors[27] = intensity;
+                motors[31] = intensity;
+                motors[35] = intensity;
             }
 
-            BhapticsLibrary.PlayPath((int)PositionType.Vest, xValues, yValues, intensities, 150);
+            BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
         }
     }
 
@@ -151,6 +122,12 @@ public class TailHaptics : MonoBehaviour
         int intensity = (int)(intensityVal * 100);
 
         // Calculate distance from root
+        if (tailRoot == null)
+        {
+            if (tailPhysics != null) tailRoot = tailPhysics.tailRoot;
+            if (tailRoot == null) tailRoot = transform; // Fallback to self if still null
+        }
+        
         float distance = Vector3.Distance(tailRoot.position, contactPoint);
         bool isNearRoot = distance < (maxImpactDistance * 0.3f); // Top 30% is "Near"
 
@@ -198,53 +175,28 @@ public class TailHaptics : MonoBehaviour
         yield return new WaitForSeconds(0.1f);
 
         // Row 2 (Upper Back)
-        System.Array.Clear(motors, 0, 40);
+        motors = new int[40];
         intensity /= 2;
         motors[25] = intensity; motors[26] = intensity;
         BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
     }
 
-    // 4. Tension (Grab)
+    // 4. Tension (Rumble Mode)
     private void UpdateTensionFeedback()
     {
-        // Rumble effect
-        // Higher tension = wider spread upwards from root
-        
+        // Tension spreads from base upwards
         int intensity = (int)(currentTension * 100);
+        
         int[] motors = new int[40];
-
-        // Always active: Bottom Root (Row 5)
+        
+        // Always active at base
         motors[37] = intensity; motors[38] = intensity;
 
-        // Spread up based on tension
-        if (currentTension > 0.3f) // Row 4
-        {
-            motors[33] = intensity; motors[34] = intensity;
-        }
-        if (currentTension > 0.6f) // Row 3
-        {
-            motors[29] = intensity; motors[30] = intensity;
-        }
-        if (currentTension > 0.9f) // Row 2
-        {
-            motors[25] = intensity; motors[26] = intensity;
-        }
+        // Spread up based on tension level
+        if (currentTension > 0.3f) { motors[33] = intensity; motors[34] = intensity; }
+        if (currentTension > 0.6f) { motors[29] = intensity; motors[30] = intensity; }
+        if (currentTension > 0.9f) { motors[25] = intensity; motors[26] = intensity; }
 
-        // Add random variation for "Rumble" / "Strain" feel
-        if (Random.value > 0.5f)
-        {
-            // Randomly reduce intensity slightly to create "stutter"
-             BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 50);
-        }
-        else
-        {
-             BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 50);
-        }
-    }
-
-    // Public API for other scripts to set tension
-    public void SetTension(float tension)
-    {
-        currentTension = Mathf.Clamp01(tension);
+        BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
     }
 }
