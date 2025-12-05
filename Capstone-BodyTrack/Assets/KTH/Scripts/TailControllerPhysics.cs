@@ -34,15 +34,14 @@ public class TailControllerPhysics : MonoBehaviour
     private Vector3 smoothedTargetDir;
     private Vector3 currentVelocity; // For SmoothDamp
 
+    // --- New Physics Variables ---
+    private List<Quaternion> initialLocalRotations = new List<Quaternion>();
+    private Quaternion rootInitialGlobalRotation;
+
     void Start()
     {
         imuReciever = FindObjectOfType<IMUReciever>();
-        if (imuReciever == null)
-        {
-            Debug.LogError("IMUReciever not found.");
-            // enabled = false; // Don't disable if we want to simulate
-        }
-
+        
         if (tailRoot == null)
         {
             Debug.LogError("Tail Root not assigned.");
@@ -50,14 +49,11 @@ public class TailControllerPhysics : MonoBehaviour
             return;
         }
 
+        // Ensure Root Rigidbody
         rootRigidbody = tailRoot.GetComponent<Rigidbody>();
-        if (rootRigidbody == null)
-        {
-            // Ensure root has RB
-            rootRigidbody = tailRoot.gameObject.AddComponent<Rigidbody>();
-        }
+        if (rootRigidbody == null) rootRigidbody = tailRoot.gameObject.AddComponent<Rigidbody>();
 
-        // Auto-populate if empty
+        // Auto-populate bones
         if (tailBones == null || tailBones.Count == 0)
         {
             tailBones = new List<Transform>();
@@ -65,17 +61,25 @@ public class TailControllerPhysics : MonoBehaviour
         }
 
         SetupPhysicsBones();
+        
+        // Capture Initial Pose (Rest Pose)
+        rootInitialGlobalRotation = tailRoot.rotation;
+        initialLocalRotations.Clear();
+        foreach (Transform bone in tailBones)
+        {
+            initialLocalRotations.Add(bone.localRotation);
+        }
     }
 
     private void AddChildrenToTailBones(Transform parent)
     {
         foreach (Transform child in parent)
         {
-            if (child.GetComponent<TailControllerPhysics>() == null)
-            {
-                tailBones.Add(child);
-                AddChildrenToTailBones(child);
-            }
+            // Stop if we hit another controller (nested tails?) - usually not the case but good safety
+            if (child.GetComponent<TailControllerPhysics>() != null) continue;
+
+            tailBones.Add(child);
+            AddChildrenToTailBones(child);
         }
     }
 
@@ -84,184 +88,184 @@ public class TailControllerPhysics : MonoBehaviour
         boneRigidbodies.Clear();
         Rigidbody previousRb = rootRigidbody;
 
-        // Root setup
-        rootRigidbody.useGravity = false;
-        rootRigidbody.isKinematic = true; // Anchor to body
-        rootRigidbody.linearDamping = damping;
-        rootRigidbody.angularDamping = damping;
+        // Root Setup
+        // Root should be Kinematic if attached to a character, but here we want to control it with physics/IMU?
+        // If it's attached to a moving character, it should probably be IsKinematic = true (or connected via Joint).
+        // For this standalone simulation, let's keep it Kinematic but rotate it via MoveRotation.
+        rootRigidbody.useGravity = false; 
+        rootRigidbody.isKinematic = true; 
         boneRigidbodies.Add(rootRigidbody);
 
-        // Ensure HapticSender on Root if it has a collider
+        // Haptics on Root
         if (rootRigidbody.GetComponent<Collider>() != null && rootRigidbody.GetComponent<HapticFeedbackSender>() == null)
             rootRigidbody.gameObject.AddComponent<HapticFeedbackSender>();
 
-
+        // Child Bones Setup
         for (int i = 0; i < tailBones.Count; i++)
         {
             Transform currentBone = tailBones[i];
             Rigidbody currentRb = currentBone.GetComponent<Rigidbody>();
 
-            if (currentRb == null)
-                currentRb = currentBone.gameObject.AddComponent<Rigidbody>();
+            if (currentRb == null) currentRb = currentBone.gameObject.AddComponent<Rigidbody>();
 
-            currentRb.useGravity = true; // Enable Gravity for natural hanging
+            // Enable Gravity for natural sagging
+            currentRb.useGravity = true; 
             currentRb.linearDamping = damping;
             currentRb.angularDamping = damping;
-            currentRb.mass = 0.5f; // Lighter mass for better reaction
+            currentRb.mass = 0.5f;
 
             boneRigidbodies.Add(currentRb);
 
-            // Joint Setup
-            CharacterJoint joint = currentBone.GetComponent<CharacterJoint>();
-            if (joint == null)
-                joint = currentBone.gameObject.AddComponent<CharacterJoint>();
+            // Joint Setup (ConfigurableJoint for better control)
+            ConfigurableJoint joint = currentBone.GetComponent<ConfigurableJoint>();
+            if (joint == null) joint = currentBone.gameObject.AddComponent<ConfigurableJoint>();
+            
+            // Clean up old CharacterJoint if exists
+            CharacterJoint oldJoint = currentBone.GetComponent<CharacterJoint>();
+            if (oldJoint != null) Destroy(oldJoint);
 
             joint.connectedBody = previousRb;
             joint.autoConfigureConnectedAnchor = true;
-            joint.enableProjection = true; // Prevents separation
-            joint.projectionDistance = 0.1f;
-            joint.projectionAngle = 180f;
+            
+            // Lock position, limit rotation
+            joint.xMotion = ConfigurableJointMotion.Locked;
+            joint.yMotion = ConfigurableJointMotion.Locked;
+            joint.zMotion = ConfigurableJointMotion.Locked;
+            
+            joint.angularXMotion = ConfigurableJointMotion.Limited;
+            joint.angularYMotion = ConfigurableJointMotion.Limited;
+            joint.angularZMotion = ConfigurableJointMotion.Limited;
 
-            // Soft limits for organic feel
-            SoftJointLimitSpring limitSpring = new SoftJointLimitSpring();
-            limitSpring.spring = 5f; // Softer spring
-            limitSpring.damper = 0.5f;
-            joint.swingLimitSpring = limitSpring;
-            joint.twistLimitSpring = limitSpring;
-
-            // Limits - Relaxed for hanging
-            SoftJointLimit sLimit = new SoftJointLimit();
-            sLimit.limit = 170f; // Allow almost full swing
-            joint.swing1Limit = sLimit;
-            joint.swing2Limit = sLimit;
-
-            SoftJointLimit tLimit = new SoftJointLimit();
-            tLimit.limit = 30f; // More twist
-            joint.lowTwistLimit = tLimit;
-            joint.highTwistLimit = tLimit;
+            // Limits
+            SoftJointLimit limit = new SoftJointLimit();
+            limit.limit = 45f; // Reasonable range
+            joint.lowAngularXLimit = limit;
+            joint.highAngularXLimit = limit;
+            joint.angularYLimit = limit;
+            joint.angularZLimit = limit;
 
             previousRb = currentRb;
 
-            // Collider & Haptics
+            // Colliders & Haptics
             if (currentBone.GetComponent<Collider>() == null)
             {
                 CapsuleCollider collider = currentBone.gameObject.AddComponent<CapsuleCollider>();
                 collider.direction = 2; // Z-axis
-                collider.radius = 0.1f;
+                collider.radius = 0.08f;
                 collider.height = 0.5f;
             }
-
-            if (currentBone.GetComponent<HapticFeedbackSender>() == null)
+            
+            // Add TailCollision for bHaptics
+            if (currentBone.GetComponent<TailCollision>() == null)
             {
-                currentBone.gameObject.AddComponent<HapticFeedbackSender>();
+                currentBone.gameObject.AddComponent<TailCollision>();
             }
+        }
+        
+        // Ignore Self Collisions
+        if (GetComponent<TailSelfCollisionIgnorer>() == null)
+        {
+            gameObject.AddComponent<TailSelfCollisionIgnorer>();
+        }
+        
+        // Setup Haptics Manager
+        SetupTailHaptics();
+    }
+
+    void SetupTailHaptics()
+    {
+        TailHaptics tailHaptics = tailRoot.GetComponent<TailHaptics>();
+        if (tailHaptics == null)
+        {
+            tailHaptics = tailRoot.gameObject.AddComponent<TailHaptics>();
         }
     }
 
     void Update()
     {
-        // Keyboard Control for Simulation
         if (simulateInput)
         {
-            float moveX = Input.GetAxis("Horizontal"); // A/D or Left/Right
-            float moveZ = Input.GetAxis("Vertical");   // W/S or Up/Down
-            
-            // Map to acceleration (tilting the sensor)
-            // Multiply by intensity to simulate strong tilt
+            float moveX = Input.GetAxis("Horizontal");
+            float moveZ = Input.GetAxis("Vertical");
             simulatedAccel = new Vector3(moveX, 0, moveZ) * simulationIntensity;
         }
     }
 
     void FixedUpdate()
     {
-        // 1. Get IMU Input
-        Vector3 currentAccel;
-        
-        if (simulateInput)
-        {
-            currentAccel = simulatedAccel;
-        }
-        else
-        {
-            currentAccel = imuReciever != null ? imuReciever.GetLatestAccel() : Vector3.zero;
-        }
-        
-        // 2. Calculate Target Direction (with Inertia Smoothing)
-        // We smooth the input to simulate the heavy tail lagging behind body movements
-        Vector3 rawTargetDir = (currentAccel * forceMagnitude) + Vector3.down * gravity;
-        Quaternion imuRotationOffset = Quaternion.Euler(imuOffset);
-        Vector3 targetWorldDir = imuRotationOffset * rawTargetDir.normalized;
+        // 1. Root Control (IMU + Sway)
+        UpdateRootRotation();
 
-        smoothedTargetDir = Vector3.SmoothDamp(smoothedTargetDir, targetWorldDir, ref currentVelocity, inertiaDelay);
-
-        // 3. Apply Active Muscle Forces
-        ApplyMuscleForces(smoothedTargetDir);
-
-        // 4. Apply Idle Sway
-        ApplyIdleSway();
+        // 2. Muscle Control (Stiffness for children)
+        UpdateMuscleForces();
     }
 
-    void ApplyMuscleForces(Vector3 targetDir)
+    void UpdateRootRotation()
     {
-        // We apply torque to align the tail with the target direction
-        // But we distribute it: Base gets more force to hold up the tail, Tip gets less (whiplash effect)
+        // Get Input
+        Vector3 currentAccel = simulateInput ? simulatedAccel : (imuReciever != null ? imuReciever.GetLatestAccel() : Vector3.zero);
         
-        for (int i = 0; i < boneRigidbodies.Count; i++)
+        // Calculate Target Rotation for Root
+        // We want the root to rotate based on IMU, relative to its initial rotation.
+        // IMU X -> Pitch (Up/Down), IMU Z -> Yaw (Left/Right) usually.
+        
+        float pitch = currentAccel.z * forceMagnitude; // Forward/Back tilt
+        float yaw = currentAccel.x * forceMagnitude;   // Left/Right tilt
+        
+        // Add Sway
+        float sway = Mathf.Sin(Time.time * idleSwaySpeed) * idleSwayAmount;
+        yaw += sway;
+
+        Quaternion targetRot = rootInitialGlobalRotation * Quaternion.Euler(pitch, yaw, 0f);
+        
+        // Apply to Root Rigidbody
+        rootRigidbody.MoveRotation(Quaternion.Slerp(rootRigidbody.rotation, targetRot, Time.fixedDeltaTime * 5f));
+    }
+
+    void UpdateMuscleForces()
+    {
+        // Apply torque to child bones to maintain shape (Stiffness)
+        for (int i = 0; i < tailBones.Count; i++)
         {
-            Rigidbody rb = boneRigidbodies[i];
-            float normalizedPos = (float)i / boneRigidbodies.Count;
-            float stiffness = stiffnessCurve.Evaluate(normalizedPos);
+            Transform bone = tailBones[i];
+            Rigidbody rb = boneRigidbodies[i + 1]; // +1 because index 0 is root
+            Quaternion initialLocal = initialLocalRotations[i];
 
-            // Calculate rotation to align Bone's Length vector with Target Direction
-            // Assuming standard Unity bone chain where Z-axis (Forward) is the bone length.
-            // If the tail sticks out horizontally, it's because we were aligning -Up to Gravity.
-            // Now we align Forward to Gravity so it hangs.
+            // Target Global Rotation = Parent Rotation * Initial Local Rotation
+            Quaternion targetGlobal = bone.parent.rotation * initialLocal;
+
+            // Calculate rotation difference
+            Quaternion deltaRot = targetGlobal * Quaternion.Inverse(bone.rotation);
             
-
-            Vector3 currentBoneVector = rb.transform.forward; // Changed from -rb.transform.up
+            // Convert to Angle-Axis
+            deltaRot.ToAngleAxis(out float angle, out Vector3 axis);
             
-            Vector3 torqueAxis = Vector3.Cross(currentBoneVector, targetDir);
-            float angleDiff = Vector3.Angle(currentBoneVector, targetDir);
+            // Normalize angle to -180 ~ 180
+            if (angle > 180f) angle -= 360f;
 
-            if (angleDiff > 0.1f)
+            // Stiffness Gradient (Base is stiffer, Tip is looser)
+            float normalizedPos = (float)i / tailBones.Count;
+            float stiffness = stiffnessCurve.Evaluate(normalizedPos) * muscleForce;
+
+            // Apply Torque (Spring)
+            // T = k * theta - c * omega (Spring - Damper)
+            if (Mathf.Abs(angle) > 0.1f)
             {
-                // Active Muscle Torque: Tries to correct the angle
-                // Stiffness determines how strong this correction is
-                // Removed Time.fixedDeltaTime because ForceMode.Acceleration already handles time step internally for continuous application?
-                // Actually ForceMode.Acceleration adds 'a' to velocity? No, it adds a*dt.
-                // If we pass X, change in vel is X*dt.
-                // Previously we passed X*dt, so change was X*dt*dt. Too small.
-                rb.AddTorque(torqueAxis.normalized * angleDiff * muscleForce * stiffness, ForceMode.Acceleration);
+                Vector3 springTorque = axis.normalized * angle * stiffness;
+                Vector3 dampingTorque = -rb.angularVelocity * damping;
+                
+                rb.AddTorque(springTorque + dampingTorque, ForceMode.Acceleration);
             }
-
-            // Dynamic Drag: Increase drag if moving fast to prevent jitter
-            rb.angularDamping = damping + (rb.angularVelocity.magnitude * dragMultiplier);
         }
     }
 
-    void ApplyIdleSway()
-    {
-        // Simple Sine wave sway based on time
-        float swayAngle = Mathf.Sin(Time.time * idleSwaySpeed) * idleSwayAmount;
-        
-        // Apply torque to the root bone to initiate the sway wave
-        if (boneRigidbodies.Count > 0)
-        {
-             // Sway around the local Forward axis (Z) -> Roll.
-             boneRigidbodies[0].AddTorque(tailRoot.forward * swayAngle * 0.5f, ForceMode.Force);
-        }
-    }
-
-    // --- Public Properties for Haptics ---
+    // --- Public Properties ---
     public Vector3 CurrentAngularVelocity
     {
         get
         {
-            // Return the angular velocity of the first active joint (base of tail)
-            if (boneRigidbodies.Count > 0 && boneRigidbodies[0] != null)
-            {
-                return boneRigidbodies[0].angularVelocity;
-            }
+            if (boneRigidbodies.Count > 1 && boneRigidbodies[1] != null)
+                return boneRigidbodies[1].angularVelocity;
             return Vector3.zero;
         }
     }
