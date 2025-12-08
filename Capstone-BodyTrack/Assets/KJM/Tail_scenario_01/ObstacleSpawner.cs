@@ -4,33 +4,41 @@ using System.Collections;
 public class PredictableSpawner : MonoBehaviour
 {
     [Header("=== Objects ===")]
-    [Tooltip("½ÇÁ¦ Ãæµ¹ÇÒ Àå¾Ö¹° ÇÁ¸®ÆÕ (Collider ÀÖÀ½)")]
+    [Tooltip("ï¿½ï¿½ï¿½ï¿½ ï¿½æµ¹ï¿½ï¿½ ï¿½ï¿½Ö¹ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Collider ï¿½ï¿½ï¿½ï¿½)")]
     public GameObject realObstaclePrefab;
 
-    [Tooltip("»ı¼º À§Ä¡¸¦ ¹Ì¸® ¾Ë·ÁÁÙ ¿¹°í¿ë ÇÁ¸®ÆÕ (Collider ¾øÀ½, ¹İÅõ¸í µî)")]
+    [Tooltip("ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ ï¿½Ì¸ï¿½ ï¿½Ë·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Collider ï¿½ï¿½ï¿½ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½)")]
     public GameObject warningIndicatorPrefab;
 
     [Header("=== Locations ===")]
     public Transform[] spawnPoints;
 
     [Header("=== Timing ===")]
-    [Tooltip("¿¹°í Ç¥½Ã°¡ ¶° ÀÖ´Â ½Ã°£ (ÃÊ)")]
+    [Tooltip("ï¿½ï¿½ï¿½ï¿½ Ç¥ï¿½Ã°ï¿½ ï¿½ï¿½ ï¿½Ö´ï¿½ ï¿½Ã°ï¿½ (ï¿½ï¿½)")]
     public float warningDuration = 0.5f;
 
-    [Tooltip("Àå¾Ö¹° »ı¼º ÈÄ ´ÙÀ½ »çÀÌÅ¬±îÁöÀÇ ´ë±â ½Ã°£")]
+    [Tooltip("ï¿½ï¿½Ö¹ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Å¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½Ã°ï¿½")]
     public float spawnInterval = 2.0f;
 
-    [Tooltip("½ÇÁ¦ Àå¾Ö¹°ÀÌ À¯ÁöµÇ´Â ½Ã°£")]
+    [Tooltip("ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç´ï¿½ ï¿½Ã°ï¿½")]
     public float obstacleLifeTime = 1.0f;
 
+    [Header("=== Movement ===")]
+    [Tooltip("ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Æ°ï¿½ ï¿½Óµï¿½")]
+    public float projectileSpeed = 10.0f;
+    public bool enableShot=false;
+
     private bool isSpawning = false;
+
+
 
     void Start()
     {
         StartCoroutine(SpawnRoutine());
+
     }
 
-    // ²°´Ù ÄÑ°Å³ª ÇÒ ¶§ ÄÚ·çÆ¾ Á¦¾î
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½Ñ°Å³ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½Ú·ï¿½Æ¾ ï¿½ï¿½ï¿½ï¿½
     public void StartExperiment()
     {
         isSpawning = true;
@@ -49,30 +57,45 @@ public class PredictableSpawner : MonoBehaviour
 
         while (isSpawning)
         {
-            // 1. À§Ä¡ ¼±Á¤ (·£´ı)
+            // 1. ï¿½ï¿½Ä¡ ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½)
             if (spawnPoints.Length == 0) yield break;
             Transform targetSpot = spawnPoints[Random.Range(0, spawnPoints.Length)];
 
-            // 2. ¿¹°í(Warning) ´Ü°è: ¹İÅõ¸í ¹°Ã¼ ¼ÒÈ¯
+            // 2. ï¿½ï¿½ï¿½ï¿½(Warning) ï¿½Ü°ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼ ï¿½ï¿½È¯
             GameObject warningObj = null;
             if (warningIndicatorPrefab != null)
             {
                 warningObj = Instantiate(warningIndicatorPrefab, targetSpot.position, targetSpot.rotation);
             }
 
-            // ¿¹°í ½Ã°£¸¸Å­ ´ë±â (ÇÃ·¹ÀÌ¾î°¡ º¸°í ÇÇÇÒ ½Ã°£)
+            // ï¿½ï¿½ï¿½ï¿½ ï¿½Ã°ï¿½ï¿½ï¿½Å­ ï¿½ï¿½ï¿½ (ï¿½Ã·ï¿½ï¿½Ì¾î°¡ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ã°ï¿½)
             yield return new WaitForSeconds(warningDuration);
 
-            // 3. ¿¹°í ¹°Ã¼ »èÁ¦
+            // 3. ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½
             if (warningObj != null) Destroy(warningObj);
 
-            // 4. ½ÇÃ¼È­(Real Spawn) ´Ü°è: ÁøÂ¥ Àå¾Ö¹° ¼ÒÈ¯
+            // 4. ï¿½ï¿½Ã¼È­(Real Spawn) ï¿½Ü°ï¿½: ï¿½ï¿½Â¥ ï¿½ï¿½Ö¹ï¿½ ï¿½ï¿½È¯
             GameObject realObj = Instantiate(realObstaclePrefab, targetSpot.position, targetSpot.rotation);
 
-            // ÁøÂ¥ Àå¾Ö¹°Àº ÀÏÁ¤ ½Ã°£ ÈÄ »ç¶óÁü (¶Ç´Â Ãæµ¹ ½Ã »ç¶óÁü)
+            Rigidbody rb = realObj.GetComponent<Rigidbody>();
+
+            //  Rigidbody í™•ì¸
+            if (rb == null)
+            {
+                rb = realObj.AddComponent<Rigidbody>();
+                rb.useGravity = false; 
+            }
+
+            if (enableShot)
+            {
+                rb.linearVelocity = -targetSpot.forward * projectileSpeed;
+            }
+            
+
+            // ï¿½ï¿½Â¥ ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ã°ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½Ç´ï¿½ ï¿½æµ¹ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½)
             Destroy(realObj, obstacleLifeTime);
 
-            // 5. ´ÙÀ½ ÅÏ±îÁö ´ë±â
+            // 5. ï¿½ï¿½ï¿½ï¿½ ï¿½Ï±ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
             yield return new WaitForSeconds(spawnInterval);
         }
     }

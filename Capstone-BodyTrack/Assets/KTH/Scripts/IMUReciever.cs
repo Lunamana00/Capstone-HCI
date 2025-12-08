@@ -32,6 +32,8 @@ public class IMUReciever : MonoBehaviour
     private Vector3 latestAccel = Vector3.zero;
     private Vector3 latestGyro = Vector3.zero;
 
+    private int requestCounter = 0; // 데이터 수신 확인용   
+
     // 3. 다른 스크립트가 안전하게 데이터를 가져갈 수 있는 public 메서드
     public Vector3 GetLatestAccel()
     {
@@ -53,9 +55,11 @@ public class IMUReciever : MonoBehaviour
         // 5. 비동기 Task로 리스너 실행 (메인 스레드 차단 방지)
         Task.Run(() => Listen(cts.Token));
 
+        Debug.Log($"IP adress 확인");
         Debug.Log($"PC IP: {GetLocalIPAddress()}");
         Debug.Log($"Flutter 앱에서 http://{GetLocalIPAddress()}:928/ 로 데이터를 보내세요.");
     }
+
 
     private async Task Listen(CancellationToken token)
     {
@@ -88,6 +92,7 @@ public class IMUReciever : MonoBehaviour
         // 6. JSON 파싱 및 데이터 업데이트
         try
         {
+            Debug.Log("request 시작");
             SensorData data = JsonUtility.FromJson<SensorData>(requestBody);
 
             // Unity 좌표계에 맞게 변환 (Flutter 앱과 동일하게 X/Z축 반전)
@@ -99,6 +104,7 @@ public class IMUReciever : MonoBehaviour
             {
                 latestAccel = accel;
                 latestGyro = gyro;
+                requestCounter++;
             }
         }
         catch (Exception ex)

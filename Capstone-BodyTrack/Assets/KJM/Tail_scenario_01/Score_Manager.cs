@@ -32,7 +32,7 @@ public class ExperimentManager : MonoBehaviour
     {
         if (scoreText != null)
         {
-            scoreText.text = $"Number of Collisions: {collisionCount}";
+            scoreText.text = $"Score : {collisionCount}";
         }
     }
 

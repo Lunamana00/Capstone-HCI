@@ -6,6 +6,8 @@ TagManager:
   tags:
   - Global Resource
   - Tail
+  - Sphere
+  - Arm
   layers:
   - Default
   - TransparentFX

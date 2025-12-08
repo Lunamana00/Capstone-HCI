@@ -27,12 +27,14 @@ public class TailControllerPhysics : MonoBehaviour
     public bool simulateInput = false;
     public float simulationIntensity = 10.0f; // Default to 10 for stronger effect
     public Vector3 simulatedAccel = Vector3.zero;
+    public bool enableIdlesway = false;
 
     private IMUReciever imuReciever;
     private Rigidbody rootRigidbody;
     private List<Rigidbody> boneRigidbodies = new List<Rigidbody>();
     private Vector3 smoothedTargetDir;
     private Vector3 currentVelocity; // For SmoothDamp
+
 
     // --- New Physics Variables ---
     private List<Quaternion> initialLocalRotations = new List<Quaternion>();
@@ -195,9 +197,13 @@ public class TailControllerPhysics : MonoBehaviour
     {
         // 1. Root Control (IMU + Sway)
         UpdateRootRotation();
-
         // 2. Muscle Control (Stiffness for children)
         UpdateMuscleForces();
+        // 3. Idle Contro;
+        if (enableIdlesway)
+        {
+            ApplyIdleSway();
+        }
     }
 
     void UpdateRootRotation()
@@ -211,7 +217,8 @@ public class TailControllerPhysics : MonoBehaviour
         
         float pitch = currentAccel.z * forceMagnitude; // Forward/Back tilt
         float yaw = currentAccel.x * forceMagnitude;   // Left/Right tilt
-        
+        Debug.Log($" {currentAccel.z} {currentAccel.x}");
+
         // Add Sway
         float sway = Mathf.Sin(Time.time * idleSwaySpeed) * idleSwayAmount;
         yaw += sway;
@@ -219,7 +226,7 @@ public class TailControllerPhysics : MonoBehaviour
         Quaternion targetRot = rootInitialGlobalRotation * Quaternion.Euler(pitch, yaw, 0f);
         
         // Apply to Root Rigidbody
-        rootRigidbody.MoveRotation(Quaternion.Slerp(rootRigidbody.rotation, targetRot, Time.fixedDeltaTime * 5f));
+        rootRigidbody.MoveRotation(Quaternion.Slerp(rootRigidbody.rotation, targetRot, Time.fixedDeltaTime * 1f));
     }
 
     void UpdateMuscleForces()
@@ -256,6 +263,18 @@ public class TailControllerPhysics : MonoBehaviour
                 
                 rb.AddTorque(springTorque + dampingTorque, ForceMode.Acceleration);
             }
+        }
+    }
+    void ApplyIdleSway()
+    {
+        // Simple Sine wave sway based on time
+        float swayAngle = Mathf.Sin(Time.time * idleSwaySpeed) * idleSwayAmount;
+
+        // Apply torque to the root bone to initiate the sway wave
+        if (boneRigidbodies.Count > 0)
+        {
+            // Sway around the local Forward axis (Z) -> Roll.
+            boneRigidbodies[0].AddTorque(tailRoot.forward * swayAngle * 0.5f, ForceMode.Force);
         }
     }
 

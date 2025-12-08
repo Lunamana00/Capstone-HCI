@@ -6,13 +6,19 @@ using Bhaptics.SDK2;
 public class TailHaptics : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private TailControllerPhysics tailPhysics;
-    [SerializeField] private Transform tailRoot;
+    [SerializeField] private TailControllerPhysics tailPhysics; // tail physics를 받음 
+    [SerializeField] private Transform tailRoot; // tail root의 위치를 받음 
 
     [Header("Sway Feedback (Inertia)")]
-    public bool enableSwayFeedback = true;
-    public float swayVelocityThreshold = 10f; // Minimum angular velocity
+    public bool enableSwayFeedback = true; //sway를 on 하거나 off 하거나 (idle상태 흔들림)
+    public float swayVelocityThreshold = 10f; // Minimum angular velocity 
     public float swayIntensityMultiplier = 0.5f;
+
+    [Header("Idle Feedback (Weight)")]
+    [SerializeField] private bool enableIdleFeedback = true;
+    [SerializeField] private float idleIntensity = 0.1f; // 10%
+    [SerializeField] private float breathingInterval = 4.0f; // 4 seconds per breath
+    [SerializeField] private float breathingIntensity = 0.15f; // Slightly stronger during breaths
 
     [Header("Collision Feedback")]
     public bool enableCollisionFeedback = true;
@@ -23,7 +29,9 @@ public class TailHaptics : MonoBehaviour
     public bool enableTensionFeedback = true;
     [Range(0f, 1f)] public float currentTension = 0f; // Updated by external script
 
-    private float lastSwayTime;
+    private float lastSwayTime;  // 4초마다 움직이기 위해 필요
+    private float breathingTimer;
+    private float lastIdleTime;
 
     void Start()
     {
@@ -31,7 +39,7 @@ public class TailHaptics : MonoBehaviour
         if (tailRoot == null && tailPhysics != null) tailRoot = tailPhysics.tailRoot;
 
         // Find all TailCollision components in tail bones and subscribe to their events
-        TailCollision[] tailCollisions = GetComponentsInChildren<TailCollision>();
+        TailCollision[] tailCollisions = GetComponentsInChildren<TailCollision>(); // 자손 tail collision 전부 가져오기 
         if (tailCollisions.Length > 0)
         {
             foreach (TailCollision collision in tailCollisions)
@@ -61,6 +69,13 @@ public class TailHaptics : MonoBehaviour
 
     void Update()
     {
+        //if (enableIdleFeedback)
+        //{
+        //    UpdateIdleFeedback();
+        //    lastIdleTime = Time.time;
+        //}
+
+
         if (enableSwayFeedback && Time.time - lastSwayTime > 0.1f) // Throttle sway updates
         {
             UpdateSwayFeedback();
@@ -73,9 +88,38 @@ public class TailHaptics : MonoBehaviour
         }
     }
 
+    // 1. Idle & Weight (Continuous, Lumbar)
+    private void UpdateIdleFeedback()
+    {
+        breathingTimer += Time.deltaTime;
+        float currentIntensity = idleIntensity;
+
+        // Simple Breathing Effect (Sine Wave)
+        float breath = (Mathf.Sin(breathingTimer * (2f * Mathf.PI / breathingInterval)) + 1f) * 0.5f; // 0 to 1
+        currentIntensity += breath * (breathingIntensity - idleIntensity);
+
+        int intensity = (int)(currentIntensity * 20);
+
+        // PlayPath on Bottom Row (Lumbar)
+        // Vest Y: 0.0 is bottom, 1.0 is top.
+        // We want bottom 1-2 rows. Y = 0.1 - 0.2.
+        // X: 0.0 to 1.0 (Full width)
+
+        // We use 4 points to define a line across the bottom
+        float[] xValues = { 0.2f, 0.8f };
+        float[] yValues = { 1.0f, 1.0f };
+        int[] intensities = { intensity, intensity };
+
+        // Duration small to allow continuous update
+        BhapticsLibrary.PlayPath((int)PositionType.Vest, xValues, yValues, intensities, 100);
+    }
+
+
+
     // 2. Inertia & Sway (Motor Mode, Centrifugal)
     private void UpdateSwayFeedback()
     {
+        Debug.Log("Sway feedback");
         if (tailPhysics == null) return;
 
         float angularVelY = tailPhysics.CurrentAngularVelocity.y;
@@ -119,7 +163,7 @@ public class TailHaptics : MonoBehaviour
         if (!enableCollisionFeedback) return;
 
         float intensityVal = Mathf.Clamp01(impactForce * collisionIntensityMultiplier);
-        int intensity = (int)(intensityVal * 100);
+        int intensity = (int)((intensityVal + 1)*100);
 
         // Calculate distance from root
         if (tailRoot == null)
@@ -166,7 +210,7 @@ public class TailHaptics : MonoBehaviour
         
         // Move up the spine: Row 3 -> Row 2 -> Row 1
         int[] motors = new int[40];
-        int intensity = startIntensity / 2;
+        int intensity = startIntensity *7 /10;
 
         // Row 3 (Middle Back)
         motors[29] = intensity; motors[30] = intensity;
