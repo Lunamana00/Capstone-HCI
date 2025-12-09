@@ -27,14 +27,13 @@ public class TailControllerPhysics : MonoBehaviour
     public bool simulateInput = false;
     public float simulationIntensity = 10.0f; // Default to 10 for stronger effect
     public Vector3 simulatedAccel = Vector3.zero;
-    public bool enableIdlesway = false;
 
     private IMUReciever imuReciever;
     private Rigidbody rootRigidbody;
     private List<Rigidbody> boneRigidbodies = new List<Rigidbody>();
     private Vector3 smoothedTargetDir;
     private Vector3 currentVelocity; // For SmoothDamp
-
+    private List<Quaternion> initialRotations = new List<Quaternion>();
 
     // --- New Physics Variables ---
     private List<Quaternion> initialLocalRotations = new List<Quaternion>();
@@ -70,6 +69,11 @@ public class TailControllerPhysics : MonoBehaviour
         foreach (Transform bone in tailBones)
         {
             initialLocalRotations.Add(bone.localRotation);
+        }
+
+        foreach (var bone in tailBones)
+        {
+            initialRotations.Add(bone.localRotation);
         }
     }
 
@@ -199,11 +203,6 @@ public class TailControllerPhysics : MonoBehaviour
         UpdateRootRotation();
         // 2. Muscle Control (Stiffness for children)
         UpdateMuscleForces();
-        // 3. Idle Contro;
-        if (enableIdlesway)
-        {
-            ApplyIdleSway();
-        }
     }
 
     void UpdateRootRotation()
@@ -265,16 +264,31 @@ public class TailControllerPhysics : MonoBehaviour
             }
         }
     }
-    void ApplyIdleSway()
+    // ★ 외부에서 호출할 초기화 함수
+    public void ResetTailDynamics()
     {
-        // Simple Sine wave sway based on time
-        float swayAngle = Mathf.Sin(Time.time * idleSwaySpeed) * idleSwayAmount;
-
-        // Apply torque to the root bone to initiate the sway wave
-        if (boneRigidbodies.Count > 0)
+        for (int i = 0; i < tailBones.Count; i++)
         {
-            // Sway around the local Forward axis (Z) -> Roll.
-            boneRigidbodies[0].AddTorque(tailRoot.forward * swayAngle * 0.5f, ForceMode.Force);
+            Transform bone = tailBones[i];
+            Rigidbody rb = bone.GetComponent<Rigidbody>();
+
+            // 1. 회전 초기화 (처음 자세로)
+            if (i < initialRotations.Count)
+            {
+                bone.localRotation = initialRotations[i];
+            }
+
+            // 2. 물리 속도 제거 (관성 제거)
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector3.zero;  // 이동 속도 0 (Unity 6)
+                                                   // rb.velocity = Vector3.zero; // Unity 6 이전 버전이면 이거 사용
+
+                rb.angularVelocity = Vector3.zero; // 회전 속도 0
+
+                // 3. 물리 엔진 잠재우기 (확실하게 멈춤)
+                rb.Sleep();
+            }
         }
     }
 

@@ -22,16 +22,17 @@ public class TailHaptics : MonoBehaviour
 
     [Header("Collision Feedback")]
     public bool enableCollisionFeedback = true;
-    public float collisionIntensityMultiplier = 0.5f;
+    public float collisionIntensityMultiplier = 0.7f;
     public float maxImpactDistance = 1.0f; // Distance from root to be considered "base"
 
     [Header("Tension Feedback (Grabbing)")]
     public bool enableTensionFeedback = true;
     [Range(0f, 1f)] public float currentTension = 0f; // Updated by external script
+    public bool IsHapticsActive => globalHapticEnabled;
 
-    private float lastSwayTime;  // 4초마다 움직이기 위해 필요
-    private float breathingTimer;
-    private float lastIdleTime;
+    private float lastSwayTime;
+
+    [SerializeField] private bool globalHapticEnabled = true;
 
     void Start()
     {
@@ -69,12 +70,17 @@ public class TailHaptics : MonoBehaviour
 
     void Update()
     {
-        //if (enableIdleFeedback)
-        //{
-        //    UpdateIdleFeedback();
-        //    lastIdleTime = Time.time;
-        //}
+        // 1. 햅틱 켜기 (H 키)
+        if (Input.GetKeyDown(KeyCode.H))
+        {
+            SetHapticsState(true);
+        }
 
+        // 2. 햅틱 끄기 (J 키 - 원하시는 키로 변경 가능, 예: KeyCode.N)
+        if (Input.GetKeyDown(KeyCode.J))
+        {
+            SetHapticsState(false);
+        }
 
         if (enableSwayFeedback && Time.time - lastSwayTime > 0.1f) // Throttle sway updates
         {
@@ -86,32 +92,6 @@ public class TailHaptics : MonoBehaviour
         {
             UpdateTensionFeedback();
         }
-    }
-
-    // 1. Idle & Weight (Continuous, Lumbar)
-    private void UpdateIdleFeedback()
-    {
-        breathingTimer += Time.deltaTime;
-        float currentIntensity = idleIntensity;
-
-        // Simple Breathing Effect (Sine Wave)
-        float breath = (Mathf.Sin(breathingTimer * (2f * Mathf.PI / breathingInterval)) + 1f) * 0.5f; // 0 to 1
-        currentIntensity += breath * (breathingIntensity - idleIntensity);
-
-        int intensity = (int)(currentIntensity * 20);
-
-        // PlayPath on Bottom Row (Lumbar)
-        // Vest Y: 0.0 is bottom, 1.0 is top.
-        // We want bottom 1-2 rows. Y = 0.1 - 0.2.
-        // X: 0.0 to 1.0 (Full width)
-
-        // We use 4 points to define a line across the bottom
-        float[] xValues = { 0.2f, 0.8f };
-        float[] yValues = { 1.0f, 1.0f };
-        int[] intensities = { intensity, intensity };
-
-        // Duration small to allow continuous update
-        BhapticsLibrary.PlayPath((int)PositionType.Vest, xValues, yValues, intensities, 100);
     }
 
 
@@ -162,8 +142,8 @@ public class TailHaptics : MonoBehaviour
     {
         if (!enableCollisionFeedback) return;
 
-        float intensityVal = Mathf.Clamp01(impactForce * collisionIntensityMultiplier);
-        int intensity = (int)((intensityVal + 1)*100);
+        float intensityVal = Mathf.Clamp01(impactForce+1 * collisionIntensityMultiplier);
+        int intensity = (int)((intensityVal + 3)*100);
 
         // Calculate distance from root
         if (tailRoot == null)
@@ -194,13 +174,14 @@ public class TailHaptics : MonoBehaviour
         {
             // Weak, Diffuse Vibration (Impact at Tip)
             // Spread across bottom area but weaker
-            int weakIntensity = intensity / 2;
+            int weakIntensity = intensity * 8 / 10;
             int[] motors = new int[40];
             // Activate wider range on bottom rows
             motors[32] = weakIntensity; motors[35] = weakIntensity;
             motors[36] = weakIntensity; motors[39] = weakIntensity;
             
             BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 200); // Longer duration
+            Debug.Log("weak");
         }
     }
 
@@ -210,7 +191,7 @@ public class TailHaptics : MonoBehaviour
         
         // Move up the spine: Row 3 -> Row 2 -> Row 1
         int[] motors = new int[40];
-        int intensity = startIntensity *7 /10;
+        int intensity = startIntensity;
 
         // Row 3 (Middle Back)
         motors[29] = intensity; motors[30] = intensity;
@@ -243,4 +224,17 @@ public class TailHaptics : MonoBehaviour
 
         BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
     }
+
+    public void SetHapticsState(bool isOn)
+    {
+        globalHapticEnabled = isOn;
+        Debug.Log($"Haptics System is now: {(globalHapticEnabled ? "<color=green>ON</color>" : "<color=red>OFF</color>")}");
+
+        // (선택 사항) 끄는 순간 현재 작동 중인 모든 진동을 멈추고 싶다면:
+        if (!isOn)
+        {
+            BhapticsLibrary.StopAll(); // bHaptics SDK 함수
+        }
+    }
+
 }
