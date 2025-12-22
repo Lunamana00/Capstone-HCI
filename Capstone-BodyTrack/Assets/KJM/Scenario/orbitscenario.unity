@@ -1599,11 +1599,12 @@ MonoBehaviour:
   - {fileID: 1483376074}
   - {fileID: 1433435409}
   - {fileID: 252591659}
+  warningLocations: []
   warningDuration: 0.5
   spawnInterval: 2
   obstacleLifeTime: 1
   projectileSpeed: 10
-  enableShot: 1
+  enableShot: 0
 --- !u!4 &1494051256
 Transform:
   m_ObjectHideFlags: 0

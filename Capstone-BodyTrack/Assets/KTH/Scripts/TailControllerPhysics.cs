@@ -216,7 +216,6 @@ public class TailControllerPhysics : MonoBehaviour
         
         float pitch = currentAccel.z * forceMagnitude; // Forward/Back tilt
         float yaw = currentAccel.x * forceMagnitude;   // Left/Right tilt
-        Debug.Log($" {currentAccel.z} {currentAccel.x}");
 
         // Add Sway
         float sway = Mathf.Sin(Time.time * idleSwaySpeed) * idleSwayAmount;
