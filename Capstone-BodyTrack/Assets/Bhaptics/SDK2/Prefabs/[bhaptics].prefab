@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1441949093026986904}
   - component: {fileID: 1441949093026986906}
+  - component: {fileID: 9080149949347099271}
   m_Layer: 0
   m_Name: '[bhaptics]'
   m_TagString: Untagged
@@ -87,4 +88,25 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d3309bbcfda3ce549b09ebc27e2d6f02, type: 3}
   m_Name: 
+  m_EditorClassIdentifier:
+--- !u!114 &9080149949347099271
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1441949093026986903}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e7733fd1fbfe443da02a4b6d1b4a8d56, type: 3}
+  m_Name: 
   m_EditorClassIdentifier: 
+  autoCreateCanvas: 1
+  anchorOffset: {x: -20, y: -20}
+  gridSize: {x: 280, y: 160}
+  cellSize: 18
+  cellGap: 4
+  fadeSeconds: 0.6
+  offColor: {r: 0.1, g: 0.1, b: 0.1, a: 0.6}
+  onColor: {r: 0.2, g: 0.8, b: 1, a: 1}
+  outlineColor: {r: 1, g: 1, b: 1, a: 0.25}

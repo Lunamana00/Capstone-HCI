@@ -155,22 +155,23 @@ MonoBehaviour:
   m_GameObject: {fileID: 86606179}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9dd326485430c8f4f99da3a4aaf79ec7, type: 3}
+  m_Script: {fileID: 11500000, guid: 2428284aa5f34efdb8c63909d9ce7134, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  tailPhysics: {fileID: 86606182}
-  tailRoot: {fileID: 1906919439}
-  enableSwayFeedback: 1
-  swayVelocityThreshold: 1
-  swayIntensityMultiplier: 1.2
-  enableIdleFeedback: 0
-  idleIntensity: 0.1
-  breathingInterval: 4
-  breathingIntensity: 0.15
-  enableCollisionFeedback: 1
-  collisionIntensityMultiplier: 10
-  maxImpactDistance: 1
-  enableTensionFeedback: 1
+  limbRoot: {fileID: 1906919439}
+  limbPhysicsBehaviour: {fileID: 86606182}
+  hapticOutputBehaviour: {fileID: 0}
+  inertia:
+    enabled: 1
+    swayVelocityThreshold: 1
+    swayIntensityMultiplier: 1.2
+    updateInterval: 0.1
+  impact:
+    enabled: 1
+    collisionIntensityMultiplier: 10
+    maxImpactDistance: 1
+  tension:
+    enabled: 1
   currentTension: 0
   globalHapticEnabled: 1
 --- !u!114 &86606182
@@ -182,51 +183,21 @@ MonoBehaviour:
   m_GameObject: {fileID: 86606179}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 65d92b7dc895de046be93c9931096fa8, type: 3}
+  m_Script: {fileID: 11500000, guid: 864ff256381649ffbaa8b574045cd159, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  tailRoot: {fileID: 1906919439}
-  tailBones:
+  limbRoot: {fileID: 1906919439}
+  limbBones:
   - {fileID: 680179478}
   - {fileID: 724298732}
   - {fileID: 1709441968}
-  forceMagnitude: 30
-  torqueMagnitude: 50
-  damping: 1
-  imuOffset: {x: -150, y: 0, z: 0}
-  gravity: 9.8
-  muscleForce: 40
-  stiffnessCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 0.1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  dragMultiplier: 0.1
-  idleSwayAmount: 5
-  idleSwaySpeed: 1
-  inertiaDelay: 0.1
+  config: {fileID: 11400000, guid: 0dd8aeea5bb143ae9baf50c05aa8250c, type: 2}
+  imuProviderBehaviour: {fileID: 0}
   simulateInput: 0
   simulationIntensity: 10
   simulatedAccel: {x: 4, y: 0, z: 0}
+  addCollisionEmitters: 0
+  ignoreSelfCollisions: 1
 --- !u!114 &86606183
 MonoBehaviour:
   m_ObjectHideFlags: 0

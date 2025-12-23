@@ -61,6 +61,7 @@ public class SphereCollisionHaptics : MonoBehaviour
         }
 
         BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, duration);
+        HapticsDebugBus.NotifyPlayMotors(PositionType.Vest, motors, duration);
     }
 
     private void SetMotors(int[] motors, int[] indices, int intensity)

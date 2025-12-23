@@ -12,13 +12,21 @@ public class TailMotor : MonoBehaviour
     [Range(-1f, 1f)] public float inputX;
     [Range(-1f, 1f)] public float inputY;
 
-    private IMUReciever imuReciever;
+    [SerializeField] private MonoBehaviour imuProviderBehaviour;
+    private IImuInputProvider imuProvider;
     private Rigidbody rb;
     private Quaternion defaultLocalRotation;
 
     void Start()
     {
-        imuReciever = FindObjectOfType<IMUReciever>();
+        if (imuProviderBehaviour != null)
+        {
+            imuProvider = imuProviderBehaviour as IImuInputProvider;
+        }
+        if (imuProvider == null)
+        {
+            imuProvider = FindObjectOfType<IMUReciever>();
+        }
         rb = GetComponent<Rigidbody>();
         defaultLocalRotation = transform.localRotation;
     }
@@ -34,9 +42,9 @@ public class TailMotor : MonoBehaviour
             targetX = inputX;
             targetY = inputY;
         }
-        else if (imuReciever != null)
+        else if (imuProvider != null)
         {
-            Vector3 accel = imuReciever.GetLatestAccel();
+            Vector3 accel = imuProvider.GetLatestAccel();
             // 센서 방향에 따라 x, z 매핑은 조절 필요
             targetX = Mathf.Clamp(accel.x, -1f, 1f); 
             targetY = Mathf.Clamp(accel.z, -1f, 1f); 

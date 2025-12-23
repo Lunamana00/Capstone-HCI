@@ -131,6 +131,7 @@ public class ArmHaptics : MonoBehaviour
             foreach (int idx in row1) motors[idx] = intensity;
 
             BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 150);
+            HapticsDebugBus.NotifyPlayMotors(PositionType.Vest, motors, 150);
             Debug.Log("Shoulder hit");
         }
         else
@@ -155,6 +156,7 @@ public class ArmHaptics : MonoBehaviour
             foreach (int idx in targetIndices) motors[idx] = Intensity;
 
             BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 80);
+            HapticsDebugBus.NotifyPlayMotors(PositionType.Vest, motors, 80);
             yield return new WaitForSeconds(0.08f);
         }
     }
@@ -176,5 +178,6 @@ public class ArmHaptics : MonoBehaviour
         }
 
         BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
+        HapticsDebugBus.NotifyPlayMotors(PositionType.Vest, motors, 100);
     }
 }

@@ -136,6 +136,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a851b67dc334d624eb6ce74f556b81da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  targetRenderer: {fileID: 0}
+  autoFindRenderer: 1
+  flashDuration: 0.15
+  flashColor: {r: 1, g: 0.2, b: 0.2, a: 1}
 --- !u!1 &86606179 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1334210072043552128, guid: 8c4bbf94469404e49a3e9fa1784b3ecf, type: 3}
@@ -155,22 +159,23 @@ MonoBehaviour:
   m_GameObject: {fileID: 86606179}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9dd326485430c8f4f99da3a4aaf79ec7, type: 3}
+  m_Script: {fileID: 11500000, guid: 2428284aa5f34efdb8c63909d9ce7134, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  tailPhysics: {fileID: 86606182}
-  tailRoot: {fileID: 1906919439}
-  enableSwayFeedback: 1
-  swayVelocityThreshold: 1
-  swayIntensityMultiplier: 0.5
-  enableIdleFeedback: 1
-  idleIntensity: 0.1
-  breathingInterval: 4
-  breathingIntensity: 0.15
-  enableCollisionFeedback: 1
-  collisionIntensityMultiplier: 1
-  maxImpactDistance: 1
-  enableTensionFeedback: 1
+  limbRoot: {fileID: 1906919439}
+  limbPhysicsBehaviour: {fileID: 86606182}
+  hapticOutputBehaviour: {fileID: 0}
+  inertia:
+    enabled: 1
+    swayVelocityThreshold: 1
+    swayIntensityMultiplier: 0.5
+    updateInterval: 0.1
+  impact:
+    enabled: 1
+    collisionIntensityMultiplier: 1
+    maxImpactDistance: 1
+  tension:
+    enabled: 1
   currentTension: 0
   globalHapticEnabled: 1
 --- !u!114 &86606182
@@ -182,51 +187,26 @@ MonoBehaviour:
   m_GameObject: {fileID: 86606179}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 65d92b7dc895de046be93c9931096fa8, type: 3}
+  m_Script: {fileID: 11500000, guid: 864ff256381649ffbaa8b574045cd159, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  tailRoot: {fileID: 1906919439}
-  tailBones:
+  limbRoot: {fileID: 1906919439}
+  limbBones:
   - {fileID: 680179478}
   - {fileID: 724298732}
   - {fileID: 1709441968}
-  forceMagnitude: 0
-  torqueMagnitude: 0
-  damping: 0.5
-  imuOffset: {x: -150, y: 0, z: 0}
-  gravity: 9.8
-  muscleForce: 20
-  stiffnessCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 0.1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  dragMultiplier: 0.1
-  idleSwayAmount: 0
-  idleSwaySpeed: 0
-  inertiaDelay: 0.1
+  config: {fileID: 11400000, guid: 5be70bb5bff246748363d760c3c56d31, type: 2}
+  imuProviderBehaviour: {fileID: 0}
+  allowKeyboardToggle: 1
+  toggleInputKey: 105
   simulateInput: 1
   simulationIntensity: 10
   simulatedAccel: {x: 4, y: 0, z: 0}
+  useRawKeyboardInput: 1
+  keyboardInputMultiplier: 3
+  keyboardForceMultiplier: 1
+  addCollisionEmitters: 0
+  ignoreSelfCollisions: 1
 --- !u!114 &86606183
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -737,115 +717,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 87a9be2a7620991a78342ef9a56fa62c, type: 3}
---- !u!1 &537419081
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 537419085}
-  - component: {fileID: 537419084}
-  - component: {fileID: 537419083}
-  - component: {fileID: 537419082}
-  m_Layer: 0
-  m_Name: Plane
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!64 &537419082
-MeshCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 537419081}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 5
-  m_Convex: 0
-  m_CookingOptions: 30
-  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &537419083
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 537419081}
-  m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: b51db210fe78df745a372851b3db949e, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_AdditionalVertexStreams: {fileID: 0}
---- !u!33 &537419084
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 537419081}
-  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
---- !u!4 &537419085
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 537419081}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 0, y: 29.27, z: 19.52}
-  m_LocalScale: {x: 30, y: 30, z: 30}
-  m_ConstrainProportionsScale: 1
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: -90, y: 0, z: 0}
 --- !u!4 &680179478 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6976064324490793095, guid: 8c4bbf94469404e49a3e9fa1784b3ecf, type: 3}
@@ -863,6 +734,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a851b67dc334d624eb6ce74f556b81da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  targetRenderer: {fileID: 0}
+  autoFindRenderer: 1
+  flashDuration: 0.15
+  flashColor: {r: 1, g: 0.2, b: 0.2, a: 1}
 --- !u!4 &724298732 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4839656052169163798, guid: 8c4bbf94469404e49a3e9fa1784b3ecf, type: 3}
@@ -885,6 +760,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a851b67dc334d624eb6ce74f556b81da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  targetRenderer: {fileID: 0}
+  autoFindRenderer: 1
+  flashDuration: 0.15
+  flashColor: {r: 1, g: 0.2, b: 0.2, a: 1}
 --- !u!54 &748052515
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -2074,6 +1953,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a851b67dc334d624eb6ce74f556b81da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  targetRenderer: {fileID: 0}
+  autoFindRenderer: 1
+  flashDuration: 0.15
+  flashColor: {r: 1, g: 0.2, b: 0.2, a: 1}
 --- !u!1 &1746124339
 GameObject:
   m_ObjectHideFlags: 0
@@ -3048,4 +2931,3 @@ SceneRoots:
   - {fileID: 1067379901}
   - {fileID: 169706863}
   - {fileID: 971118792}
-  - {fileID: 537419085}

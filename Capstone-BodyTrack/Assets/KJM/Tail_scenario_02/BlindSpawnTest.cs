@@ -1,11 +1,15 @@
 using UnityEngine;
+
+
 using System.Collections;
+using System.Collections.Generic;
 
 public class BlindTestSpawner : MonoBehaviour
 {
     [Header("References")]
     public GameObject obstaclePrefab;      // 장애물 프리팹
     public TailControllerPhysics tailPhysics; // 꼬리 뼈대 정보 가져오기용
+    public LimbPhysicsController limbPhysics; // Generic limb physics
 
     [Header("Settings")]
     public float interval = 4.0f; // 문제 출제 간격
@@ -22,6 +26,8 @@ public class BlindTestSpawner : MonoBehaviour
 
     void Start()
     {
+        if (limbPhysics == null) limbPhysics = FindObjectOfType<LimbPhysicsController>();
+        if (tailPhysics == null) tailPhysics = FindObjectOfType<TailControllerPhysics>();
         // 시작 시 모드 텍스트 업데이트
         if (BlindTestManager.Instance != null)
             BlindTestManager.Instance.UpdateModeText(isBlindMode);
@@ -45,23 +51,56 @@ public class BlindTestSpawner : MonoBehaviour
         }
     }
 
+    private void ResetLimbDynamics()
+    {
+        if (limbPhysics != null)
+        {
+            limbPhysics.ResetDynamics();
+            return;
+        }
+        if (tailPhysics != null)
+        {
+            tailPhysics.ResetTailDynamics();
+        }
+    }
+
+    private List<Transform> GetLimbBones()
+    {
+        if (limbPhysics != null && limbPhysics.limbBones != null && limbPhysics.limbBones.Count > 0)
+        {
+            return limbPhysics.limbBones;
+        }
+        if (tailPhysics != null && tailPhysics.tailBones != null && tailPhysics.tailBones.Count > 0)
+        {
+            return tailPhysics.tailBones;
+        }
+        return null;
+    }
+
     IEnumerator SpawnRoutine()
     {
         while (true)
         {
-            if (tailPhysics != null)
+            if (limbPhysics != null || tailPhysics != null)
             {
-                tailPhysics.ResetTailDynamics();
+                ResetLimbDynamics();
             }
 
             // 1. Root(1) vs Tip(2) 랜덤 선정 (50% 확률)
             bool isRootTarget = Random.value > 0.5f;
 
             // Root는 0번 인덱스, Tip은 마지막 인덱스
-            int boneIndex = isRootTarget ? 0 : tailPhysics.tailBones.Count - 1;
+            List<Transform> bones = GetLimbBones();
+            if (bones == null || bones.Count == 0)
+            {
+                yield return null;
+                continue;
+            }
+
+            int boneIndex = isRootTarget ? 0 : bones.Count - 1;
             int correctAnswer = isRootTarget ? 1 : 2;
 
-            Transform targetBone = tailPhysics.tailBones[boneIndex];
+            Transform targetBone = bones[boneIndex];
 
             // 2. 매니저에게 정답 등록 알림
             if (BlindTestManager.Instance != null)

@@ -32,12 +32,28 @@ public class TailHaptics : MonoBehaviour
 
     private float lastSwayTime;
 
+    [SerializeField] private MonoBehaviour hapticOutputBehaviour;
+    private IHapticOutput hapticOutput;
+
     [SerializeField] private bool globalHapticEnabled = true;
 
     void Start()
     {
         if (tailPhysics == null) tailPhysics = GetComponent<TailControllerPhysics>();
         if (tailRoot == null && tailPhysics != null) tailRoot = tailPhysics.tailRoot;
+
+        if (hapticOutputBehaviour != null)
+        {
+            hapticOutput = hapticOutputBehaviour as IHapticOutput;
+        }
+        if (hapticOutput == null)
+        {
+            hapticOutput = GetComponent<BhapticsVestOutput>();
+            if (hapticOutput == null)
+            {
+                hapticOutput = gameObject.AddComponent<BhapticsVestOutput>();
+            }
+        }
 
         // Find all TailCollision components in tail bones and subscribe to their events
         TailCollision[] tailCollisions = GetComponentsInChildren<TailCollision>(); // 자손 tail collision 전부 가져오기 
@@ -96,6 +112,13 @@ public class TailHaptics : MonoBehaviour
 
 
 
+
+    private void PlayMotors(int[] motors, int durationMs)
+    {
+        if (hapticOutput == null) return;
+        hapticOutput.PlayMotors(PositionType.Vest, motors, durationMs);
+    }
+
     // 2. Inertia & Sway (Motor Mode, Centrifugal)
     private void UpdateSwayFeedback()
     {
@@ -133,7 +156,7 @@ public class TailHaptics : MonoBehaviour
                 motors[35] = intensity;
             }
 
-            BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
+            PlayMotors(motors, 100);
         }
     }
 
@@ -165,7 +188,7 @@ public class TailHaptics : MonoBehaviour
             motors[33] = intensity; motors[34] = intensity; // Row 4
             motors[37] = intensity; motors[38] = intensity; // Row 5 (Bottom)
             
-            BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100); // Short & Sharp
+            PlayMotors(motors, 100); // Short & Sharp
             
             // Reverberation (Echo up the spine)
             StartCoroutine(PlayReverberation(intensity));
@@ -180,7 +203,7 @@ public class TailHaptics : MonoBehaviour
             motors[32] = weakIntensity; motors[35] = weakIntensity;
             motors[36] = weakIntensity; motors[39] = weakIntensity;
             
-            BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 200); // Longer duration
+            PlayMotors(motors, 200); // Longer duration
             Debug.Log("weak");
         }
     }
@@ -195,7 +218,7 @@ public class TailHaptics : MonoBehaviour
 
         // Row 3 (Middle Back)
         motors[29] = intensity; motors[30] = intensity;
-        BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
+        PlayMotors(motors, 100);
         
         yield return new WaitForSeconds(0.1f);
 
@@ -203,7 +226,7 @@ public class TailHaptics : MonoBehaviour
         motors = new int[40];
         intensity /= 2;
         motors[25] = intensity; motors[26] = intensity;
-        BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
+        PlayMotors(motors, 100);
     }
 
     // 4. Tension (Rumble Mode)
@@ -222,7 +245,7 @@ public class TailHaptics : MonoBehaviour
         if (currentTension > 0.6f) { motors[29] = intensity; motors[30] = intensity; }
         if (currentTension > 0.9f) { motors[25] = intensity; motors[26] = intensity; }
 
-        BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, 100);
+        PlayMotors(motors, 100);
     }
 
     public void SetHapticsState(bool isOn)
@@ -233,7 +256,7 @@ public class TailHaptics : MonoBehaviour
         // (선택 사항) 끄는 순간 현재 작동 중인 모든 진동을 멈추고 싶다면:
         if (!isOn)
         {
-            BhapticsLibrary.StopAll(); // bHaptics SDK 함수
+            hapticOutput?.StopAll(); // bHaptics SDK 함수
         }
     }
 

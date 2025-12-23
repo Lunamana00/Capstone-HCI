@@ -22,7 +22,7 @@ public class SensorData
     public Vector3Data gyroscope;
 }
 
-public class IMUReciever : MonoBehaviour
+public class IMUReciever : MonoBehaviour, IImuInputProvider
 {
     private HttpListener httpListener;
     private CancellationTokenSource cts;

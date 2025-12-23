@@ -114,6 +114,7 @@ public class Continuous360Haptics : MonoBehaviour
         if (isHit)
         {
             BhapticsLibrary.PlayMotors((int)PositionType.Vest, motors, duration);
+            HapticsDebugBus.NotifyPlayMotors(PositionType.Vest, motors, duration);
         }
     }
 
